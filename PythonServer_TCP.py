@@ -16,8 +16,8 @@ s.listen(20)
 all_threads = []
 
 db_host = "localhost"
-db_user = "root"
-db_password = "ejea1234"
+db_user = "----"
+db_password = "####"
 db = "python_messenger"
 
 stop_thread_returning_chat = False
