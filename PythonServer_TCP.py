@@ -16,45 +16,56 @@ s.listen(20)
 all_threads = []
 
 db_host = "localhost"
-db_user = "----"
-db_password = "####"
+db_user = "root"
+db_password = "ejea1234"
 db = "python_messenger"
 
+stop_thread_returning_chat = False
 
-def requesting_data(connection, logged_in):
-    while not logged_in:
-        data = connection.recv(4096)
-        if not data:
-            break
-        connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
-        cursor = connection_to_db.cursor()
-        cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED;")
-        logged_in, user_id = login_create(connection, data, connection_to_db, cursor)
+
+def requesting_data(connection, logged_in, ip):
+    global stop_thread_returning_chat
+    cursor = None
+    user_id = None
+    connection_to_db = None
+    recipient_username = None
+    thread_returning_chat_alive = False
 
     while True:
-        data = connection.recv(4096)
-        if not data:
-            break
+        try:
+            data = connection.recv(4096)
+            if not data:
+                print(f'Connection from {ip} was closed')
+                break
+            if not logged_in:
+                connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
+                cursor = connection_to_db.cursor()
+                cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED;")
+                logged_in, user_id = login_create(connection, data, connection_to_db, cursor)
+            else:
+                data = decode_split_data(data)
+                mode = data[0]
+                if mode == 'chat_array_request':
+                    listing_chats(connection, cursor, user_id)
+                elif mode == 'create_new_chat':
+                    recipient_username = data[1]
+                    create_new_chat(connection, connection_to_db, cursor, user_id, recipient_username)
+                elif mode == 'selection_of_chat':
+                    recipient_username = data[1]
+                    if not thread_returning_chat_alive:
+                        stop_thread_returning_chat = False
+                        thread_returning_chat_alive = True
 
-        data = decode_split_data(data)
-        mode = data[0]
-        if mode == 'chat_array_request':
-            listing_chats(connection, cursor, user_id)
-        elif mode == 'create_new_chat':
-            recipient_username = data[1]
-            create_new_chat(connection, connection_to_db, cursor, user_id, recipient_username)
-        elif mode == 'selection_of_chat':
-            recipient_username = data[1]
-            thread_returning_chat = threading.Thread(target=returning_chat,
-                                                     args=(connection, cursor, user_id, recipient_username))
-            thread_returning_chat.start()
-            thread_selecting_chat = threading.Thread(target=selecting_chat, args=(
-                                                    connection, user_id, recipient_username,
-                                                    thread_returning_chat))
-            thread_selecting_chat.start()
-            while thread_selecting_chat.is_alive() and thread_returning_chat.is_alive():
-                pass
-            thread_selecting_chat.kill()
+                        thread_returning_chat = threading.Thread(target=returning_chat,
+                                                                 args=(connection, cursor, user_id, recipient_username))
+                        thread_returning_chat.start()
+                elif mode == "sending_new_message":
+                    new_message = data[1]
+                    inserting_new_messages(user_id, recipient_username, new_message)
+                elif mode == "exiting_from_chat":
+                    stop_thread_returning_chat = True
+        except ConnectionResetError as connection_reset_error:
+            print(f'Connection from {ip}: {connection_reset_error}')
 
 
 def decode_split_data(data):
@@ -142,8 +153,10 @@ def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_use
     else:
         recipient_user_id = recipient_user_id[0][0]
         table_name = str(user_id) + "_" + str(recipient_user_id)
-        cursor.execute("insert into chats_{} (values ('{}', '{}', '_{}'))".format(user_id, user_id, recipient_user_id, table_name))
-        cursor.execute("insert into chats_{} (values ('{}', '{}', '_{}'))".format(recipient_user_id, recipient_user_id, user_id, table_name))
+        cursor.execute("insert into chats_{} (values ('{}', '{}', '_{}'))".format(user_id, user_id,
+                                                                                  recipient_user_id, table_name))
+        cursor.execute("insert into chats_{} (values ('{}', '{}', '_{}'))".format(recipient_user_id, recipient_user_id,
+                                                                                  user_id, table_name))
         cursor.execute("create table _{}("
                        "message_id int(64) auto_increment, "
                        "message text(1000), "
@@ -156,48 +169,44 @@ def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_use
         connection.send("000000#".encode('utf-8'))
 
 
-def selecting_chat(connection, user_id, recipient_username, thread_returning_chat):
-    while True:
-        data = connection.recv(4096)
-        if not data:
-            break
-        data = decode_split_data(data)
-        request_code = data[0]
-        if request_code == "sending_new_message":
-            new_message = data[1]
-            inserting_new_messages(user_id, recipient_username, new_message)
-        elif request_code == "exiting_from_chat":
-            thread_returning_chat.kill()
-            thread_selecting_chat.kill()
-            break
-
-
 def returning_chat(connection, cursor, user_id, recipient_username):
     old_chat = None
-    while True:
-        chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
-        cursor.execute("select username from messenger_users where user_id = '{}'".format(user_id))
-        username = cursor.fetchall()[0][0]
-        cursor.execute("select message, transmitter_id from {}".format(chat_table_name))
-        chat = cursor.fetchall()
-        if len(chat) > 0 and chat != old_chat:
-            chat_concatenated = "000000"
-            for message in chat:
-                counter = 0
-                for item in message:
-                    if counter == 1:
-                        if item == user_id:
-                            item = username
-                        else:
-                            item = recipient_username
-                    else:
-                        item = str(item)
-                    chat_concatenated = chat_concatenated + "#" + item
-                    counter += 1
-            connection.send(chat_concatenated.encode('utf-8'))
-        else:
-            connection.send("000006#".encode('utf-8'))
-        time.sleep(1)
+    global stop_thread_returning_chat
+    while not stop_thread_returning_chat:
+        try:
+            chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
+            cursor.execute("select username from messenger_users where user_id = '{}'".format(user_id))
+            username = cursor.fetchall()[0][0]
+            cursor.execute("select message, transmitter_id from {}".format(chat_table_name))
+            chat = cursor.fetchall()
+            if chat == old_chat:
+                pass
+            elif len(chat) > 0:
+                old_chat = chat
+                chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
+                connection.send(chat_concatenated.encode('utf-8'))
+            else:
+                connection.send("000006#".encode('utf-8'))
+            time.sleep(1)
+        except mysql.connector.errors.ProgrammingError:
+            break
+
+
+def chat_into_string(chat, username, user_id, recipient_username):
+    chat_concatenated = "000000"
+    for message in chat:
+        counter = 0
+        for item in message:
+            if counter == 1:
+                if item == user_id:
+                    item = username
+                else:
+                    item = recipient_username
+            else:
+                item = str(item)
+            chat_concatenated = chat_concatenated + "#" + item
+            counter += 1
+    return chat_concatenated
 
 
 def selecting_chat_table_name(cursor, user_id, recipient_username):
@@ -216,7 +225,8 @@ def inserting_new_messages(user_id, recipient_username, new_message):
     cursor.execute("select user_id from messenger_users where username = '{}'".format(recipient_username))
     recipient_user_id = cursor.fetchall()[0][0]
     if new_message != "":
-        cursor.execute("insert into {}(values(null,'{}','{}','{}'))".format(chat_table_name, new_message, user_id, recipient_user_id))
+        cursor.execute("insert into {}(values(null,'{}','{}','{}'))".format(chat_table_name, new_message,
+                                                                            user_id, recipient_user_id))
         connection_to_db.commit()
 
 
@@ -226,7 +236,7 @@ def main():
             connection, addr = s.accept()
             ip = addr[0]
             print("New connection from {}".format(ip))
-            t = threading.Thread(target=requesting_data, args=(connection, False))
+            t = threading.Thread(target=requesting_data, args=(connection, False, ip))
             t.start()
             all_threads.append(t)
     except KeyboardInterrupt:

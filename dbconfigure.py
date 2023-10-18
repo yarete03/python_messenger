@@ -1,8 +1,8 @@
 import mysql.connector
 
 db_host = "localhost"
-db_user = "----"
-db_password = "####"
+db_user = "root"
+db_password = "ejea1234"
 db = "python_messenger"
 connection_to_db = mysql.connector.connect(host=db_host,
                                            user=db_user,
