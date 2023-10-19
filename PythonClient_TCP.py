@@ -1,15 +1,14 @@
 import socket
 import platform
 import os
-import threading
+import multiprocessing
+import time
 
 server_ip = '192.168.231.130'
 server_port = 8000
 socket = socket.socket()
 socket.connect((server_ip, server_port))
 login_or_create_values = ["y", "n", ""]
-
-stop_thread_reception = False
 
 if platform.system() == 'Windows':
     clear_command = 'cls'
@@ -28,7 +27,6 @@ def decode_split_response(response):
 
 
 def login_create():
-    clear_console()
     login_or_create = input("Do you already have an account? [y/N]: ")
     login_or_create = login_or_create.lower()
     while login_or_create not in login_or_create_values:
@@ -46,7 +44,7 @@ def login():
     print("Log into your account")
     username = input("Username: ")
     password = input("Password: ")
-    socket.send("login,{},{}".format(username, password).encode("utf-8"))
+    socket.send("login#{}#{}".format(username, password).encode("utf-8"))
     response = socket.recv(4096)
     response = decode_split_response(response)
     response_rc = response[0]
@@ -63,7 +61,7 @@ def create_user():
     print("Create your user.")
     username = input("Choose your new username: ")
     password = input("Choose your new password: ")
-    socket.send("create,{},{}".format(username, password).encode("utf-8"))
+    socket.send("create#{}#{}".format(username, password).encode("utf-8"))
     response = socket.recv(4096)
     response = decode_split_response(response)
     response_rc = response[0]
@@ -78,7 +76,7 @@ def create_user():
 
 def chat_selection():
     while True:
-        socket.send("chat_array_request,".encode("utf-8"))
+        socket.send("chat_array_request#".encode("utf-8"))
         response = socket.recv(4096)
         print("Select a chat or create a new one [number/C]: ")
         response = decode_split_response(response)
@@ -96,7 +94,7 @@ def chat_selection():
             if chat_response.lower() == "c":
                 clear_console()
                 recipient_username = input("Who do you want to start a conversation with?: ")
-                socket.send("create_new_chat,{}".format(recipient_username).encode('utf-8'))
+                socket.send("create_new_chat#{}".format(recipient_username).encode('utf-8'))
                 response = socket.recv(4096)
                 response = decode_split_response(response)
                 clear_console()
@@ -110,6 +108,7 @@ def chat_selection():
                     username_chat_selection = response[chat_response]
                     open_chat(username_chat_selection)
                 except ValueError:
+                    clear_console()
                     print("You selected a wrong value. Please try again.")
         except KeyboardInterrupt:
             break
@@ -117,27 +116,21 @@ def chat_selection():
 
 def open_chat(username_chat_selection):
     clear_console()
-    username_chat_selection = "selection_of_chat," + username_chat_selection
+    username_chat_selection = "selection_of_chat#" + username_chat_selection
     username_chat_selection = username_chat_selection.encode('utf-8')
     socket.send(username_chat_selection)
-    starting_receiving_sending_threads()
+    starting_receiving_sending_multiprocesses()
 
 
-def starting_receiving_sending_threads():
-    global stop_thread_reception
-    stop_thread_reception = False
-    thread_reception = threading.Thread(target=receiving_messages)
-    thread_sending = threading.Thread(target=message_sender)
-    thread_reception.start()
-    thread_sending.start()
-    while not stop_thread_reception:
-        pass
+def starting_receiving_sending_multiprocesses():
+    multiprocess_reception = multiprocessing.Process(target=receiving_messages)
+    multiprocess_reception.start()
+    message_sender(multiprocess_reception)
 
 
 def receiving_messages():
     old_chat = None
-    global stop_thread_reception
-    while not stop_thread_reception:
+    while True:
         try:
             chat = socket.recv(4096)
             if not chat:
@@ -157,27 +150,28 @@ def receiving_messages():
                             chat.pop(0)
                 else:
                     print("You have to start your new conversation")
-        except OSError:
+        except KeyboardInterrupt:
             break
 
 
-def message_sender():
-    global stop_thread_reception
+def message_sender(multiprocess_reception):
     while True:
         try:
             new_message = input()
             if new_message is None:
                 new_message = ""
-            new_message = "sending_new_message," + new_message
+            new_message = "sending_new_message#" + new_message
             socket.send(new_message.encode('utf-8'))
         except KeyboardInterrupt:
-            socket.send("exiting_from_chat,".encode('utf-8'))
-            stop_thread_reception = True
+            socket.send("exiting_from_chat#".encode('utf-8'))
+            multiprocess_reception.terminate()
+            clear_console()
             break
 
 
 def main():
     try:
+        clear_console()
         login_create()
         socket.close()
         clear_console()

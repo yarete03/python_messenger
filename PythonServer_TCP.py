@@ -1,7 +1,5 @@
 import socket
 import threading
-import time
-
 import mysql.connector
 
 host = '0.0.0.0'
@@ -64,13 +62,14 @@ def requesting_data(connection, logged_in, ip):
                     inserting_new_messages(user_id, recipient_username, new_message)
                 elif mode == "exiting_from_chat":
                     stop_thread_returning_chat = True
+                    thread_returning_chat_alive = False
         except ConnectionResetError as connection_reset_error:
             print(f'Connection from {ip}: {connection_reset_error}')
 
 
 def decode_split_data(data):
     data = data.decode("utf-8")
-    data = data.split(",")
+    data = data.split("#")
     return data
 
 
@@ -187,7 +186,6 @@ def returning_chat(connection, cursor, user_id, recipient_username):
                 connection.send(chat_concatenated.encode('utf-8'))
             else:
                 connection.send("000006#".encode('utf-8'))
-            time.sleep(1)
         except mysql.connector.errors.ProgrammingError:
             break
 
@@ -239,8 +237,6 @@ def main():
             t = threading.Thread(target=requesting_data, args=(connection, False, ip))
             t.start()
             all_threads.append(t)
-    except KeyboardInterrupt:
-        print("Stopped by Ctrl+C")
     finally:
         if s:
             s.close()
