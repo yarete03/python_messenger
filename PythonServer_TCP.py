@@ -1,5 +1,5 @@
 import socket
-import threading
+import multiprocessing
 import mysql.connector
 
 host = '0.0.0.0'
@@ -11,23 +11,19 @@ s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
 s.bind((host, port))
 s.listen(20)
 
-all_threads = []
+all_multiprocesses = []
 
 db_host = "localhost"
 db_user = "----"
 db_password = "####"
 db = "python_messenger"
 
-stop_thread_returning_chat = False
-
 
 def requesting_data(connection, logged_in, ip):
-    global stop_thread_returning_chat
     cursor = None
     user_id = None
     connection_to_db = None
     recipient_username = None
-    thread_returning_chat_alive = False
 
     while True:
         try:
@@ -44,25 +40,19 @@ def requesting_data(connection, logged_in, ip):
                 data = decode_split_data(data)
                 mode = data[0]
                 if mode == 'chat_array_request':
-                    listing_chats(connection, cursor, user_id)
+                    listing_chats(connection, user_id)
                 elif mode == 'create_new_chat':
                     recipient_username = data[1]
                     create_new_chat(connection, connection_to_db, cursor, user_id, recipient_username)
                 elif mode == 'selection_of_chat':
                     recipient_username = data[1]
-                    if not thread_returning_chat_alive:
-                        stop_thread_returning_chat = False
-                        thread_returning_chat_alive = True
-
-                        thread_returning_chat = threading.Thread(target=returning_chat,
-                                                                 args=(connection, cursor, user_id, recipient_username))
-                        thread_returning_chat.start()
+                    multiprocess_returning_chat = multiprocessing.Process(target=returning_chat, args=(connection, user_id, recipient_username))
+                    multiprocess_returning_chat.start()
                 elif mode == "sending_new_message":
                     new_message = data[1]
                     inserting_new_messages(user_id, recipient_username, new_message)
                 elif mode == "exiting_from_chat":
-                    stop_thread_returning_chat = True
-                    thread_returning_chat_alive = False
+                    multiprocess_returning_chat.terminate()
         except ConnectionResetError as connection_reset_error:
             print(f'Connection from {ip}: {connection_reset_error}')
 
@@ -131,15 +121,18 @@ def login(cursor, username, password):
     return message, logged_in, user_id
 
 
-def listing_chats(connection, cursor, user_id):
-    cursor.execute("select username from messenger_users where user_id = (select user_2 from chats_{})".format(user_id))
+def listing_chats(connection, user_id):
+    connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
+    cursor = connection_to_db.cursor()
+    cursor.execute("select username from messenger_users where user_id in (select user_2 from chats_{})".format(user_id))
     chats = cursor.fetchall()
     if len(chats) < 1:
         connection.send("000003#".encode("utf-8"))
     else:
         chats_concatenated = "000000"
-        for chat in chats[0]:
-            chats_concatenated = chats_concatenated + "#" + chat
+        for chat in chats:
+            for username in chat:
+                chats_concatenated = f'{chats_concatenated}#{username}'
         chats_concatenated = chats_concatenated.encode("utf-8")
         connection.send(chats_concatenated)
 
@@ -168,24 +161,25 @@ def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_use
         connection.send("000000#".encode('utf-8'))
 
 
-def returning_chat(connection, cursor, user_id, recipient_username):
+def returning_chat(connection, user_id, recipient_username):
     old_chat = None
-    global stop_thread_returning_chat
-    while not stop_thread_returning_chat:
+    connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
+    cursor = connection_to_db.cursor()
+    cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED;")
+    while True:
         try:
             chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
             cursor.execute("select username from messenger_users where user_id = '{}'".format(user_id))
             username = cursor.fetchall()[0][0]
             cursor.execute("select message, transmitter_id from {}".format(chat_table_name))
             chat = cursor.fetchall()
-            if chat == old_chat:
-                pass
-            elif len(chat) > 0:
-                old_chat = chat
-                chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
-                connection.send(chat_concatenated.encode('utf-8'))
-            else:
-                connection.send("000006#".encode('utf-8'))
+            if chat != old_chat:
+                if len(chat) > 0:
+                    old_chat = chat
+                    chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
+                    connection.send(chat_concatenated.encode('utf-8'))
+                else:
+                    connection.send("000006#".encode('utf-8'))
         except mysql.connector.errors.ProgrammingError:
             break
 
@@ -211,7 +205,11 @@ def selecting_chat_table_name(cursor, user_id, recipient_username):
     cursor.execute("select user_id from messenger_users where username = '{}'".format(recipient_username))
     recipient_user_id = cursor.fetchall()[0][0]
     cursor.execute("select table_name from chats_{} where user_2 = '{}'".format(user_id, recipient_user_id))
-    chat_table_name = cursor.fetchall()[0][0]
+    try:
+        chat_table_name = cursor.fetchall()[0][0]
+    except IndexError:
+        print(user_id, recipient_user_id)
+        exit(1)
     return chat_table_name
 
 
@@ -234,13 +232,13 @@ def main():
             connection, addr = s.accept()
             ip = addr[0]
             print("New connection from {}".format(ip))
-            t = threading.Thread(target=requesting_data, args=(connection, False, ip))
+            t = multiprocessing.Process(target=requesting_data, args=(connection, False, ip))
             t.start()
-            all_threads.append(t)
+            all_multiprocesses.append(t)
     finally:
         if s:
             s.close()
-        for t in all_threads:
+        for t in all_multiprocesses:
             t.join()
 
 

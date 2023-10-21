@@ -2,7 +2,6 @@ import socket
 import platform
 import os
 import multiprocessing
-import time
 
 server_ip = '192.168.231.130'
 server_port = 8000
@@ -97,8 +96,9 @@ def chat_selection():
                 socket.send("create_new_chat#{}".format(recipient_username).encode('utf-8'))
                 response = socket.recv(4096)
                 response = decode_split_response(response)
+                response_rc = response[0]
                 clear_console()
-                if response != "000000":
+                if response_rc != "000000":
                     print("There is no user named {}. Please, try again.".format(recipient_username))
                 else:
                     print("New chat was successfully created!")
