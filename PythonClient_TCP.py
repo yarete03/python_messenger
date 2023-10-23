@@ -137,9 +137,10 @@ def receiving_messages():
                 break
             chat = decode_split_response(chat)
             chat_rc = chat[0]
-            if old_chat != chat:
-                old_chat = chat.copy()
-                if chat_rc == "000000":
+            if chat_rc != "000000" and old_chat is None:
+                print("You have to start your new conversation")
+            else:
+                if old_chat != chat:
                     chat.pop(0)
                     clear_console()
                     while len(chat) > 0:
@@ -148,8 +149,7 @@ def receiving_messages():
                         print(transmitter_name + ": " + message)
                         for i in range(2):
                             chat.pop(0)
-                else:
-                    print("You have to start your new conversation")
+            old_chat = chat.copy()
         except KeyboardInterrupt:
             break
 

@@ -1,5 +1,7 @@
 import socket
 import multiprocessing
+import time
+
 import mysql.connector
 
 host = '0.0.0.0'
@@ -46,7 +48,8 @@ def requesting_data(connection, logged_in, ip):
                     create_new_chat(connection, connection_to_db, cursor, user_id, recipient_username)
                 elif mode == 'selection_of_chat':
                     recipient_username = data[1]
-                    multiprocess_returning_chat = multiprocessing.Process(target=returning_chat, args=(connection, user_id, recipient_username))
+                    multiprocess_returning_chat = multiprocessing.Process(target=returning_chat, args=(
+                                                                          connection, user_id, recipient_username))
                     multiprocess_returning_chat.start()
                 elif mode == "sending_new_message":
                     new_message = data[1]
@@ -180,6 +183,7 @@ def returning_chat(connection, user_id, recipient_username):
                     connection.send(chat_concatenated.encode('utf-8'))
                 else:
                     connection.send("000006#".encode('utf-8'))
+            time.sleep(0.1)
         except mysql.connector.errors.ProgrammingError:
             break
 
