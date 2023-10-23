@@ -8,3 +8,4 @@ server testing.py
 'server testing.py'
 sed.sh
 sed_recovery.sh
+nohup.out
