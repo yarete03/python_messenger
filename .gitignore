@@ -1,0 +1,15 @@
+# created by virtualenv automatically
+bin/
+lib
+lib/
+PythonServer.py
+pyvenv.cfg
+server testing.py
+'server testing.py'
+sed.sh
+sed_recovery.sh
+unsed.sh
+nohup.out
+.idea
+.idea/
+.idea/*
