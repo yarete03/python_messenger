@@ -137,7 +137,7 @@ def login():
 def create_user():
     print("Create your user.")
     username = input("Choose your new username: ")
-    password = input("Choose your new password: ")
+    password = getpass("Choose your new password: ")
     message = "create#{}#{}".format(username, password)
     encode_encrypt_send(message)
     response = socket.recv(4096)

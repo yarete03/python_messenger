@@ -80,7 +80,7 @@ def requesting_data(connection, logged_in, ip, key, cipher_iv):
         try:
             data = connection.recv(4096)
             if not data:
-                print(f'Connection from {ip} was closed')
+                print(f'[+] Connection from {ip} was closed')
                 connection.close()
                 break
             if not logged_in:
@@ -107,7 +107,9 @@ def requesting_data(connection, logged_in, ip, key, cipher_iv):
                 elif mode == "exiting_from_chat":
                     multiprocess_returning_chat.terminate()
         except ConnectionResetError as connection_reset_error:
-            print(f'Connection from {ip}: {connection_reset_error}')
+            print(f'[!] Connection from {ip}: {connection_reset_error}')
+        except KeyboardInterrupt:
+            break
 
 
 def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
@@ -119,10 +121,10 @@ def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
         data = data.split("#")
         return data
     except (ValueError, rsa.pkcs1.DecryptionError):
-        print(f"CRITICAL ALERT: Decryption failed on '{ip}' communications. This could mean that someone is trying "
+        print(f"[!] CRITICAL ALERT: Decryption failed on '{ip}' communications. This could mean that someone is trying "
               f"to attack the server")
         connection.close()
-        print(f"WARNING: Communication with client '{ip}' was closed for security purpose")
+        print(f"[!] WARNING: Communication with client '{ip}' was closed for security purpose")
         exit(101)
 
 
@@ -140,7 +142,7 @@ def login_create(connection, data, connection_to_db, cursor, ip, key, cipher_iv)
     username = data[1]
     password = data[2]
     if mode == "create":
-        cursor.execute("select user_id from messenger_users where username = '{}';".format(username))
+        cursor.execute("""select user_id from messenger_users where username = %s;""", (username,))
         if len(cursor.fetchall()) >= 1:
             message = "000001#User already exists. Change the username."
             logged_in = False
@@ -157,28 +159,24 @@ def login_create(connection, data, connection_to_db, cursor, ip, key, cipher_iv)
 
 
 def creating_user(connection_to_db, cursor, username, password):
-    cursor.execute(
-        "insert into messenger_users(user_id, username, password) values(null,'{}',MD5('{}'));".format(username,
+    cursor.execute("""insert into messenger_users(user_id, username, password) values(null,%s,MD5(%s));""", (username,
                                                                                                        password))
-    cursor.execute("select user_id from messenger_users where username = '{}'".format(username))
+    cursor.execute("""select user_id from messenger_users where username = %s""", (username,))
     user_id = cursor.fetchall()[0][0]
-    cursor.execute(
-        "create table chats_{}("
-        "user_1 int(32), "
-        "user_2 int(32), "
-        "table_name varchar(255) not null, "
-        "primary key (user_1, user_2), "
-        "foreign key (user_1) references messenger_users(user_id) on delete cascade, "
-        "foreign key (user_2) references messenger_users(user_id) on delete cascade);".format(
-            user_id))
+    cursor.execute("create table chats_{}("
+        "user_1 int(32),"
+        "user_2 int(32)," 
+        "table_name varchar(255) not null," 
+        "primary key (user_1, user_2)," 
+        "foreign key (user_1) references messenger_users(user_id) on delete cascade," 
+        "foreign key (user_2) references messenger_users(user_id) on delete cascade);".format(user_id))
     connection_to_db.commit()
     message = "000000#User was successfully created! Try to log into your new user."
     return message
 
 
 def login(cursor, username, password):
-    cursor.execute(
-        "select user_id from messenger_users where username = '{}' and password = MD5('{}');".format(username,
+    cursor.execute("""select user_id from messenger_users where username = %s and password = MD5(%s);""", (username,
                                                                                                      password))
     user_id = cursor.fetchall()
     if len(user_id) >= 1:
@@ -195,7 +193,7 @@ def login(cursor, username, password):
 def listing_chats(connection, user_id, key, cipher_iv):
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor()
-    cursor.execute("select username from messenger_users where user_id in (select user_2 from chats_{})".format(user_id))
+    cursor.execute("""select username from messenger_users where user_id in (select user_2 from chats_{})""".format(user_id))
     chats = cursor.fetchall()
     if len(chats) < 1:
         error = "000003#"
@@ -210,7 +208,7 @@ def listing_chats(connection, user_id, key, cipher_iv):
 
 
 def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_username, key, cipher_iv):
-    cursor.execute("select user_id from messenger_users where username = '{}'".format(recipient_username))
+    cursor.execute("""select user_id from messenger_users where username = %s""", (recipient_username,))
     recipient_user_id = cursor.fetchall()
     if len(recipient_user_id) < 1:
         error = "000004#"
@@ -218,17 +216,17 @@ def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_use
     else:
         recipient_user_id = recipient_user_id[0][0]
         table_name = str(user_id) + "_" + str(recipient_user_id)
-        cursor.execute("insert into chats_{} (values ('{}', '{}', '_{}'))".format(user_id, user_id,
-                                                                                  recipient_user_id, table_name))
-        cursor.execute("insert into chats_{} (values ('{}', '{}', '_{}'))".format(recipient_user_id, recipient_user_id,
-                                                                                  user_id, table_name))
+        cursor.execute("""insert into chats_{} (values (%s, %s, %s))""".format(user_id), (user_id,
+                                                                                  recipient_user_id, "_" + table_name))
+        cursor.execute("""insert into chats_{} (values (%s, %s, %s))""".format(recipient_user_id), (recipient_user_id,
+                                                                                  user_id, "_" + table_name))
         cursor.execute("create table _{}("
-                       "message_id int(64) auto_increment, "
-                       "message text(1000), "
-                       "transmitter_id int(32), "
-                       "recipient_id int(32), "
-                       "primary key (message_id), "
-                       "foreign key (recipient_id) references messenger_users(user_id) on delete cascade, "
+                       "message_id int(64) auto_increment," 
+                       "message text(1000)," 
+                       "transmitter_id int(32)," 
+                       "recipient_id int(32)," 
+                       "primary key (message_id)," 
+                       "foreign key (recipient_id) references messenger_users(user_id) on delete cascade," 
                        "foreign key (transmitter_id) references messenger_users(user_id)on delete cascade);".format(table_name))
         connection_to_db.commit()
         success = "000000#"
@@ -240,12 +238,12 @@ def returning_chat(connection, user_id, recipient_username, key, cipher_iv):
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor()
     cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED;")
+    chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
+    cursor.execute("""select username from messenger_users where user_id = %s""", (user_id,))
+    username = cursor.fetchall()[0][0]
     while True:
         try:
-            chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
-            cursor.execute("select username from messenger_users where user_id = '{}'".format(user_id))
-            username = cursor.fetchall()[0][0]
-            cursor.execute("select message, transmitter_id from {}".format(chat_table_name))
+            cursor.execute("""select message, transmitter_id from {}""".format(chat_table_name))
             chat = cursor.fetchall()
             if chat != old_chat:
                 if len(chat) > 0:
@@ -256,6 +254,8 @@ def returning_chat(connection, user_id, recipient_username, key, cipher_iv):
                     encode_encrypt_send(connection, "000006#", key, cipher_iv)
             time.sleep(0.1)
         except mysql.connector.errors.ProgrammingError:
+            break
+        except KeyboardInterrupt:
             break
 
 
@@ -277,14 +277,10 @@ def chat_into_string(chat, username, user_id, recipient_username):
 
 
 def selecting_chat_table_name(cursor, user_id, recipient_username):
-    cursor.execute("select user_id from messenger_users where username = '{}'".format(recipient_username))
+    cursor.execute("""select user_id from messenger_users where username = %s""", (recipient_username,))
     recipient_user_id = cursor.fetchall()[0][0]
-    cursor.execute("select table_name from chats_{} where user_2 = '{}'".format(user_id, recipient_user_id))
-    try:
-        chat_table_name = cursor.fetchall()[0][0]
-    except IndexError:
-        print(user_id, recipient_user_id)
-        exit(1)
+    cursor.execute("""select table_name from chats_{} where user_2 = %s""".format(user_id), (recipient_user_id,))
+    chat_table_name = cursor.fetchall()[0][0]
     return chat_table_name
 
 
@@ -293,10 +289,10 @@ def inserting_new_messages(user_id, recipient_username, new_message):
     cursor = connection_to_db.cursor(buffered=True)
     cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED;")
     chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
-    cursor.execute("select user_id from messenger_users where username = '{}'".format(recipient_username))
+    cursor.execute("""select user_id from messenger_users where username = %s""", (recipient_username,))
     recipient_user_id = cursor.fetchall()[0][0]
     if new_message != "":
-        cursor.execute("insert into {}(values(null,'{}','{}','{}'))".format(chat_table_name, new_message,
+        cursor.execute("""insert into {}(values(null,%s,%s,%s))""".format(chat_table_name), (new_message,
                                                                             user_id, recipient_user_id))
         connection_to_db.commit()
 
@@ -307,7 +303,7 @@ def main():
             try:
                 connection, addr = s.accept()
                 ip = addr[0]
-                print("New connection from {}".format(ip))
+                print("[+] New connection from {}".format(ip))
                 key = connection.recv(4096)
                 connection.send("handshake".encode("utf-8"))
                 cipher_iv = connection.recv(4096)
@@ -326,7 +322,7 @@ def main():
                     connection.close()
                     print(f"WARNING: Communication with client '{ip}' was closed for security purpose")
             except KeyboardInterrupt:
-                print("\n[+] Server was stopped")
+                print("\n[!] Server was stopped")
                 exit()
     finally:
         if s:
