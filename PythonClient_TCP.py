@@ -22,34 +22,6 @@ login_or_create_values = ["y", "n", ""]
 ## On this cross way, private server key is only on server side keeping away clients
 ## for decrypting all communications but being able to keep the server packets save too.
 
-client_private_key = (b'-----BEGIN RSA PRIVATE KEY-----\n'
-                      b'MIIEqQIBAAKCAQEA6hpvEYjX/eM21ELwsTiws7CauWiDYCGd9PTvykK8EfA4nMCq\n'
-                      b'gB9gPlWxXyO1LWBWRi/OeGsFuT1JoiIz2j0wtJhJn9YGZyU/VAt3+z+mizd6E3R1\n'
-                      b'XSy2BZ1LBbvOQ0RBFXXOzRjHQ3yj/34DNkJgQ/msIAsACIBpW5y37wmw7K3pkrTq\n'
-                      b'REJnmeU7qSeeO2Lccx+uVby1G5WxJB9scO+/LW23b7Os133aCEXLZMvwKrBeILdi\n'
-                      b'4UggYmoGy0m5BNjDNwUu1x4z2sG5/fDKB+tOnkUP06pFVDxyw1WxEfLPUPJyr8zF\n'
-                      b'2ng5/V8C9BlpPx2gvhn4VIp8TG6u3gjJMDdRXQIDAQABAoIBAQDkdoOqYxgXaCTc\n'
-                      b'Ja/r5F1eH54AD6UWrfgPVPKnO1V7VCqLn+NFQlmUu+Br7tcjv36y5HjlP9zIGK3B\n'
-                      b'kwtzkn/z3yMK375D7y/Mf5zKECYiezOhxOe81KOW+xh6Mfxr3TJ/FQeLVQEyNXN/\n'
-                      b'JaVQ0JpN/F0ksFeJ9Hb16th6Ppl1vsJf9+qq9fvIZ+vohj4iX719EQJtZCgDsv5b\n'
-                      b'2/o/c26TeFp2/gd+VTFcneGhSB001nfo2o5kHXE5ht3bpe0yLUgCcRlYnF0lvZ9R\n'
-                      b'sIviY5mlD9mb5CdmEs1VRipPHTAeE9hwIBsPk3vhXCsdg29yYOdJ27BSIO1OrOjV\n'
-                      b'x/BwZ/xpAoGJAO2ERuESh7Q/2w5/r4VEd5D0Ko/sWhh1GD4VZWnHZgbGccDb5Vst\n'
-                      b'uB5FQy4cqlXoa/Av89zuirxrMC5kF7DwKN4uTs1WB8O+Ub/z7/mP5j0TcnCGI3BA\n'
-                      b'hR8qkwSz8sPRm/pZvdFu6+S51Pmn/XtIiLNiezqyM7zLsJxkR7qt7bHTFEaakAtL\n'
-                      b'xWsCeQD8UifM60qq19Mob0X1ftNAISP3A1Y5uuK3lpv/zft2AK3Vqa4TLnqXdFj1\n'
-                      b'd5dfNM0GUXFRBbOJVtlHhaQcgGB4MyRKyqLomHQjZxdaypHp3FkzaYpfqOAQuUw3\n'
-                      b'S0p/oI39qj6BGifmOomXCXngJUnVfefrl7V6LlcCgYhmofT6xsYK9ljS8AvJO2er\n'
-                      b'JEbMACaCUP7TvO0gg0AsB04aNyrpdl0L/4PjBhH4o0EY/a+TtSQP/QVJ1oiCNZSD\n'
-                      b'RWFZyyX5yGCM4Hy+yxaDJ8cYpm3j0I11hTEYJCXvxcBvsp2aRSL7p+1Gn/ehcRtY\n'
-                      b'4GI9X8mJeD7tpUt1eDiw0XP+ekVqDCjXAnhVvZ0ktzfSQjDQ5q8BMy2Z9yj/gTTF\n'
-                      b'vUnZVOaB0H8IpEZt+pDal8q0uKaaEx9vDMQ2x2oYPDW8D7UZ5sHTpZQihE5q09zz\n'
-                      b'6QpeFWQMSBW5QFVXcR/CTeKGDFFn4L/aCrb1YeqHeFnilDW5C1FM557lWzl6Bz11\n'
-                      b'3VUCgYgT53D1oCGeXIdGPfSX6qaHfUWFeQT4GjwaDUoZkfGHZHuXIK0wQabAhp8i\n'
-                      b'SrZM1XRe1AiBg320A3pO4Yr5wcnwesr16kNDSWobv2yq4PVAu+mSLynyaoWlaa8S\n'
-                      b'nG18THoD8ktMU8e5fUUhg4azEGk6IqEjzABJxffTn40rjhwHBaspdE9dr1EW\n'
-                      b'-----END RSA PRIVATE KEY-----\n')
-
 server_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\n'
               b'MIIBCgKCAQEArYXsESibTipH2ZhNH7QY7BIgEWvU4h394Me+JnFlQk/e4WSLrIn9\n'
               b'hAfV3NTv6N665sdH2cOB3axcqEYtcRbeBThoJQ5aBKxX95E1P+S7QAXxb1H4TeyO\n'
@@ -59,8 +31,6 @@ server_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\n'
               b'DktaLXtyG7U2iIaZNz5LihGOW54g3JO1PwIDAQAB\n'
               b'-----END RSA PUBLIC KEY-----\n')
 
-
-client_private_key = rsa.PrivateKey.load_pkcs1(client_private_key)
 server_public_key = rsa.PublicKey.load_pkcs1(server_public_key)
 
 salt = get_random_bytes(32)
@@ -87,18 +57,17 @@ def clear_console():
 
 def decode_split_decrypt_response(response):
     cipher = AES.new(key, AES.MODE_CBC, cipher_iv)
-    #response = rsa.decrypt(response, client_private_key)
     response = unpad(cipher.decrypt(response), AES.block_size)
     response = response.decode('utf-8')
-    response = response.split("#")
+    response = eval(response)
     return response
 
 
 def encode_encrypt_send(message):
+    message = str(message)
     message = message.encode("utf-8")
     cipher = AES.new(key, AES.MODE_CBC, cipher_iv)
     ciphered_message = cipher.encrypt(pad(message, AES.block_size))
-    #ciphered_message = rsa.encrypt(ciphered_message, server_public_key)
     socket.send(ciphered_message)
 
 
@@ -120,7 +89,7 @@ def login():
     print("Log into your account")
     username = input("Username: ")
     password = getpass()
-    message = "login#{}#{}".format(username, password)
+    message = ["login", username, password]
     encode_encrypt_send(message)
     response = socket.recv(4096)
     response = decode_split_decrypt_response(response)
@@ -138,7 +107,7 @@ def create_user():
     print("Create your user.")
     username = input("Choose your new username: ")
     password = getpass("Choose your new password: ")
-    message = "create#{}#{}".format(username, password)
+    message = ["create", username, password]
     encode_encrypt_send(message)
     response = socket.recv(4096)
     response = decode_split_decrypt_response(response)
@@ -154,7 +123,7 @@ def create_user():
 
 def chat_selection():
     while True:
-        message = "chat_array_request#"
+        message = ["chat_array_request"]
         encode_encrypt_send(message)
         response = socket.recv(4096)
         print("Select a chat or create a new one [number/C]: ")
@@ -173,7 +142,7 @@ def chat_selection():
             if chat_response.lower() == "c":
                 clear_console()
                 recipient_username = input("Who do you want to start a conversation with?: ")
-                message = "create_new_chat#{}".format(recipient_username)
+                message = ["create_new_chat", recipient_username]
                 encode_encrypt_send(message)
                 response = socket.recv(4096)
                 response = decode_split_decrypt_response(response)
@@ -197,7 +166,7 @@ def chat_selection():
 
 def open_chat(username_chat_selection):
     clear_console()
-    message = "selection_of_chat#" + username_chat_selection
+    message = ["selection_of_chat", username_chat_selection]
     encode_encrypt_send(message)
     starting_receiving_sending_multiprocesses()
 
@@ -240,10 +209,10 @@ def message_sender(multiprocess_reception):
             new_message = input()
             if new_message is None:
                 new_message = ""
-            new_message = "sending_new_message#" + new_message
+            new_message = ["sending_new_message", new_message]
             encode_encrypt_send(new_message)
         except KeyboardInterrupt:
-            message = "exiting_from_chat#"
+            message = ["exiting_from_chat"]
             encode_encrypt_send(message)
             multiprocess_reception.terminate()
             clear_console()

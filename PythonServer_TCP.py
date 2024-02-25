@@ -56,18 +56,8 @@ server_private_key = (b'-----BEGIN RSA PRIVATE KEY-----\n'
                b'ikgkoSeVvh5nH/9ujDrnMYVs4D2LI8zAY5oUqdqijbi6BgtZaiAhdT1lsZlW+A==\n'
                b'-----END RSA PRIVATE KEY-----\n')
 
-client_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\n'
-                     b'MIIBCgKCAQEA6hpvEYjX/eM21ELwsTiws7CauWiDYCGd9PTvykK8EfA4nMCqgB9g\n'
-                     b'PlWxXyO1LWBWRi/OeGsFuT1JoiIz2j0wtJhJn9YGZyU/VAt3+z+mizd6E3R1XSy2\n'
-                     b'BZ1LBbvOQ0RBFXXOzRjHQ3yj/34DNkJgQ/msIAsACIBpW5y37wmw7K3pkrTqREJn\n'
-                     b'meU7qSeeO2Lccx+uVby1G5WxJB9scO+/LW23b7Os133aCEXLZMvwKrBeILdi4Ugg\n'
-                     b'YmoGy0m5BNjDNwUu1x4z2sG5/fDKB+tOnkUP06pFVDxyw1WxEfLPUPJyr8zF2ng5\n'
-                     b'/V8C9BlpPx2gvhn4VIp8TG6u3gjJMDdRXQIDAQAB\n'
-                     b'-----END RSA PUBLIC KEY-----\n'
-)
 
 server_private_key = rsa.PrivateKey.load_pkcs1(server_private_key)
-client_public_key = rsa.PublicKey.load_pkcs1(client_public_key)
 
 
 def requesting_data(connection, logged_in, ip, key, cipher_iv):
@@ -115,10 +105,9 @@ def requesting_data(connection, logged_in, ip, key, cipher_iv):
 def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
     try:
         cipher = AES.new(key, AES.MODE_CBC, cipher_iv)
-        #data = rsa.decrypt(data, server_private_key)
         data = unpad(cipher.decrypt(data), AES.block_size)
         data = data.decode("utf-8")
-        data = data.split("#")
+        data = eval(data)
         return data
     except (ValueError, rsa.pkcs1.DecryptionError):
         print(f"[!] CRITICAL ALERT: Decryption failed on '{ip}' communications. This could mean that someone is trying "
@@ -129,10 +118,10 @@ def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
 
 
 def encode_encrypt_send(connection, message, key, cipher_iv):
+    message = str(message)
     message = message.encode("utf-8")
     cipher = AES.new(key, AES.MODE_CBC, cipher_iv)
     ciphered_message = cipher.encrypt(pad(message, AES.block_size))
-    #ciphered_message = rsa.encrypt(ciphered_message, client_public_key)
     connection.send(ciphered_message)
 
 
@@ -144,7 +133,7 @@ def login_create(connection, data, connection_to_db, cursor, ip, key, cipher_iv)
     if mode == "create":
         cursor.execute("""select user_id from messenger_users where username = %s;""", (username,))
         if len(cursor.fetchall()) >= 1:
-            message = "000001#User already exists. Change the username."
+            message = ["000001", "User already exists. Change the username."]
             logged_in = False
             user_id = None
         else:
@@ -171,7 +160,7 @@ def creating_user(connection_to_db, cursor, username, password):
         "foreign key (user_1) references messenger_users(user_id) on delete cascade," 
         "foreign key (user_2) references messenger_users(user_id) on delete cascade);".format(user_id))
     connection_to_db.commit()
-    message = "000000#User was successfully created! Try to log into your new user."
+    message = ["000000", "User was successfully created! Try to log into your new user."]
     return message
 
 
@@ -180,11 +169,11 @@ def login(cursor, username, password):
                                                                                                      password))
     user_id = cursor.fetchall()
     if len(user_id) >= 1:
-        message = "000000#Welcome {}!".format(username)
+        message = ["000000", "Welcome {}!".format(username)]
         logged_in = True
         user_id = user_id[0][0]
     else:
-        message = "000002#Username or password are incorrect or doesn't exists. Please try again."
+        message = ["000002", "Username or password are incorrect or doesn't exists. Please try again."]
         logged_in = False
         user_id = None
     return message, logged_in, user_id
@@ -196,13 +185,13 @@ def listing_chats(connection, user_id, key, cipher_iv):
     cursor.execute("""select username from messenger_users where user_id in (select user_2 from chats_{})""".format(user_id))
     chats = cursor.fetchall()
     if len(chats) < 1:
-        error = "000003#"
+        error = ["000003"]
         encode_encrypt_send(connection, error, key, cipher_iv)
     else:
-        chats_concatenated = "000000"
+        chats_concatenated = ["000000"]
         for chat in chats:
             for username in chat:
-                chats_concatenated = f'{chats_concatenated}#{username}'
+                chats_concatenated.append(username)
         chats_concatenated = chats_concatenated
         encode_encrypt_send(connection, chats_concatenated, key, cipher_iv)
 
@@ -211,7 +200,7 @@ def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_use
     cursor.execute("""select user_id from messenger_users where username = %s""", (recipient_username,))
     recipient_user_id = cursor.fetchall()
     if len(recipient_user_id) < 1:
-        error = "000004#"
+        error = ["000004"]
         encode_encrypt_send(connection, error, key, cipher_iv)
     else:
         recipient_user_id = recipient_user_id[0][0]
@@ -229,7 +218,7 @@ def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_use
                        "foreign key (recipient_id) references messenger_users(user_id) on delete cascade," 
                        "foreign key (transmitter_id) references messenger_users(user_id)on delete cascade);".format(table_name))
         connection_to_db.commit()
-        success = "000000#"
+        success = ["000000"]
         encode_encrypt_send(connection, success, key, cipher_iv)
 
 
@@ -251,7 +240,7 @@ def returning_chat(connection, user_id, recipient_username, key, cipher_iv):
                     chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
                     encode_encrypt_send(connection, chat_concatenated, key, cipher_iv)
                 else:
-                    encode_encrypt_send(connection, "000006#", key, cipher_iv)
+                    encode_encrypt_send(connection, ["000006"], key, cipher_iv)
             time.sleep(0.1)
         except mysql.connector.errors.ProgrammingError:
             break
@@ -260,7 +249,7 @@ def returning_chat(connection, user_id, recipient_username, key, cipher_iv):
 
 
 def chat_into_string(chat, username, user_id, recipient_username):
-    chat_concatenated = "000000"
+    chat_concatenated = ["000000"]
     for message in chat:
         counter = 0
         for item in message:
@@ -271,7 +260,7 @@ def chat_into_string(chat, username, user_id, recipient_username):
                     item = recipient_username
             else:
                 item = str(item)
-            chat_concatenated = chat_concatenated + "#" + item
+            chat_concatenated.append(item)
             counter += 1
     return chat_concatenated
 
