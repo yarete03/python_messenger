@@ -109,7 +109,7 @@ def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
         data = data.decode("utf-8")
         data = eval(data)
         return data
-    except (ValueError, rsa.pkcs1.DecryptionError):
+    except ValueError:
         print(f"[!] CRITICAL ALERT: Decryption failed on '{ip}' communications. This could mean that someone is trying "
               f"to attack the server")
         connection.close()
