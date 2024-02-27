@@ -27,37 +27,12 @@ db = "python_messenger"
 ## This feature will encrypt all data that travels though network with RSA keys.
 ## On this cross way, private server key is only on server side keeping away clients
 ## for decrypting all communications but being able to keep the server packets save too.
-
-server_private_key = (b'-----BEGIN RSA PRIVATE KEY-----\n'
-               b'MIIEqgIBAAKCAQEArYXsESibTipH2ZhNH7QY7BIgEWvU4h394Me+JnFlQk/e4WSL\n'
-               b'rIn9hAfV3NTv6N665sdH2cOB3axcqEYtcRbeBThoJQ5aBKxX95E1P+S7QAXxb1H4\n'
-               b'TeyOo6Qgonwi8cKQNaPCvoHKx6ci04Zcnc8WVilV3Uc/FkgbPLB6sPxMhKHPSX11\n'
-               b'1zXaA4QgvDpEIsF1v1VsB1TiWeVzNLHWv8sjooz9JhOZfX2XvDQWE/aILPcIEIdi\n'
-               b'Ew+302SKaOraLw4s3F9+LSQRH+xZ+FESy6+xU+rG5ZKQklcrBr8k1HnGKzH3dEUn\n'
-               b'dNJrDktaLXtyG7U2iIaZNz5LihGOW54g3JO1PwIDAQABAoIBAAw4yo/K1GWFBNqG\n'
-               b'p6f7/2VhQXD4r13dzuvuJa5/fipVhdVKR6w3a+vIwX90YBF+3psynhTweE0svrn7\n'
-               b'd2fnvGuRtYQmpqB9oxSE3cNKUQYJZR/6HgsfBkzwWnwXUj7E/XNJvYW9jpLRatqL\n'
-               b'NCrJU0FuV+XmBsODAJogqFOvKcJPdCaKFkNJcEvJwlpQy0nC1ALdkghJ7h4QoElM\n'
-               b'qZMYxDUWc8CettQKZOFV0sJqcj5urkCZz65L70GMFq99ki1YOjkVCT3N7iYEYxw4\n'
-               b'Sr47dXiNE5byJZH5Ug62exkvIb2jE+Dj4CWLZihxvdl2NcgbfPJ1cyr52FWtck7b\n'
-               b'3FKPzgECgYkAxpoo0IPC5bq9psJoO39NhPf4BiaquvTyp3PYGYkcKXAxEWhe6XiN\n'
-               b'xUUeuqK1t85cGo0oDuzjta796SFTeSq3jayuQkZfJi8HqIWaWBVbQSUSlNkoPTuY\n'
-               b'hHfDGKWpxb0J1haLf5r/ncEGT9FgxQzGeuT/NEkJntflGZRsa1zpF/4poAYIKyPK\n'
-               b'XwJ5AN+sQajOgTFZhAzJSdxHTHqsg0oyMZbzJ6umH+ErfqD7+q4+wU98Cvk/4NnX\n'
-               b'IsoSmkZEN0QcXs+kBU5yia3FLg40RuJ0nvgbQABROGuKuuqnnxqF1BS927RL4CPb\n'
-               b'deXTZGA9EdFJFIfaMurDnzwndqKzd9BEQrvBIQKBiDbD2+1j6CKhVBrgEQ4XFLFO\n'
-               b'D77iesIDOcajUzv3aySiI2XBeiq3a6CyZr7gj2uYJB3OPvWerUw0bSAUaIhJF0Si\n'
-               b'EYuFDEfjQCFgdidD/F4CcxVIrKf1/yDIRaxOQnqcnlHC9cTCYSqHR85K1nyAAVty\n'
-               b'Ok2YtmZu8mYTX7JbdIuBMslF4IrE29ECeQClplUaR5W2jq0VKx3gXY1ubMTu9i1z\n'
-               b'tbDzlpyVjjjB0Nven+taims2HPDRZFsHfK90yqCDeN9euAKWDo2YfCeXrW+x1tzE\n'
-               b'sqm7kmtOeffkQS+73NEsa0+DP45IAAhYpS35eEDx1kW2NwruguIzEqbx6CgbvfIO\n'
-               b'SwECgYkAlViFZE1ZKBXlWsvJxEN38NIZAuDi5pO5GiAM3xWKZ8JEO2KtGAigyR08\n'
-               b'klhV3MvZD0IVN5UDq95Sizt5Q+5ho289AQowmW728qlPMWFMH/iKtxFJWr/iu5Dr\n'
-               b'ikgkoSeVvh5nH/9ujDrnMYVs4D2LI8zAY5oUqdqijbi6BgtZaiAhdT1lsZlW+A==\n'
-               b'-----END RSA PRIVATE KEY-----\n')
-
+with open("./private.key","rb") as key_file:
+    server_private_key = key_file.read()
 
 server_private_key = rsa.PrivateKey.load_pkcs1(server_private_key)
+
+cursor_read_everything = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
 
 
 def requesting_data(connection, logged_in, ip, key, cipher_iv):
@@ -76,7 +51,7 @@ def requesting_data(connection, logged_in, ip, key, cipher_iv):
             if not logged_in:
                 connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
                 cursor = connection_to_db.cursor()
-                cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED;")
+                cursor.execute(cursor_read_everything)
                 logged_in, user_id = login_create(connection, data, connection_to_db, cursor, ip, key, cipher_iv)
             else:
                 data = decode_split_decrypt_response(data, ip, connection, key, cipher_iv)
@@ -104,7 +79,7 @@ def requesting_data(connection, logged_in, ip, key, cipher_iv):
 
 def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
     try:
-        cipher = AES.new(key, AES.MODE_CBC, cipher_iv)
+        cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
         data = unpad(cipher.decrypt(data), AES.block_size)
         data = data.decode("utf-8")
         data = eval(data)
@@ -120,7 +95,7 @@ def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
 def encode_encrypt_send(connection, message, key, cipher_iv):
     message = str(message)
     message = message.encode("utf-8")
-    cipher = AES.new(key, AES.MODE_CBC, cipher_iv)
+    cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
     ciphered_message = cipher.encrypt(pad(message, AES.block_size))
     connection.send(ciphered_message)
 
@@ -192,7 +167,6 @@ def listing_chats(connection, user_id, key, cipher_iv):
         for chat in chats:
             for username in chat:
                 chats_concatenated.append(username)
-        chats_concatenated = chats_concatenated
         encode_encrypt_send(connection, chats_concatenated, key, cipher_iv)
 
 
@@ -226,7 +200,7 @@ def returning_chat(connection, user_id, recipient_username, key, cipher_iv):
     old_chat = None
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor()
-    cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED;")
+    cursor.execute(cursor_read_everything)
     chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
     cursor.execute("""select username from messenger_users where user_id = %s""", (user_id,))
     username = cursor.fetchall()[0][0]
@@ -276,7 +250,7 @@ def selecting_chat_table_name(cursor, user_id, recipient_username):
 def inserting_new_messages(user_id, recipient_username, new_message):
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor(buffered=True)
-    cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED;")
+    cursor.execute(cursor_read_everything)
     chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
     cursor.execute("""select user_id from messenger_users where username = %s""", (recipient_username,))
     recipient_user_id = cursor.fetchall()[0][0]

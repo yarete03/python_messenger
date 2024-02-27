@@ -34,12 +34,12 @@ server_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\n'
 server_public_key = rsa.PublicKey.load_pkcs1(server_public_key)
 
 salt = get_random_bytes(32)
+cipher_iv = get_random_bytes(32)
 password = random.choices("abcdefghijknmñopkrstuvwxyzABCDEFGHIJKNMÑOPKRSTUVWXYZ1234567890'¡.,*?¿_:;", k=20)
 password = "".join([letter for letter in password])
 
 key = PBKDF2(password, salt, dkLen=32)
-cipher = AES.new(key, AES.MODE_CBC)
-cipher_iv = cipher.iv
+cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
 
 socket.send(rsa.encrypt(key, server_public_key))
 socket.recv(4096)
@@ -56,7 +56,7 @@ def clear_console():
 
 
 def decode_split_decrypt_response(response):
-    cipher = AES.new(key, AES.MODE_CBC, cipher_iv)
+    cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
     response = unpad(cipher.decrypt(response), AES.block_size)
     response = response.decode('utf-8')
     response = eval(response)
@@ -66,7 +66,7 @@ def decode_split_decrypt_response(response):
 def encode_encrypt_send(message):
     message = str(message)
     message = message.encode("utf-8")
-    cipher = AES.new(key, AES.MODE_CBC, cipher_iv)
+    cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
     ciphered_message = cipher.encrypt(pad(message, AES.block_size))
     socket.send(ciphered_message)
 
@@ -206,9 +206,9 @@ def receiving_messages():
 def message_sender(multiprocess_reception):
     while True:
         try:
-            new_message = input()
-            if new_message is None:
-                new_message = ""
+            new_message = None
+            while new_message is None:
+                new_message = input()
             new_message = ["sending_new_message", new_message]
             encode_encrypt_send(new_message)
         except KeyboardInterrupt:
