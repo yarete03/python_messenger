@@ -13,3 +13,6 @@ nohup.out
 .idea
 .idea/
 .idea/*
+.scannerwork/
+.scannerwork/*
+private.key
