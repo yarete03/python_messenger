@@ -1,6 +1,0 @@
-projectKey=python_messenger
-serverUrl=http://127.0.0.1:9000
-serverVersion=10.4.1.88267
-dashboardUrl=http://127.0.0.1:9000/dashboard?id=python_messenger
-ceTaskId=3225d4fd-828b-4384-ad8d-27d172375be5
-ceTaskUrl=http://127.0.0.1:9000/api/ce/task?id=3225d4fd-828b-4384-ad8d-27d172375be5
