@@ -125,7 +125,7 @@ def login_create(connection, data, connection_to_db, cursor, ip, key, cipher_iv)
 def creating_user(connection_to_db, cursor, username, password):
     cursor.execute("""insert into messenger_users(user_id, username, password) values(null,%s,MD5(%s));""", (username,
                                                                                                        password))
-    cursor.execute("""select user_id from messenger_users where username = %s""", (username,))
+    cursor = getting_user_id(cursor, username)
     user_id = cursor.fetchall()[0][0]
     cursor.execute("create table chats_{}("
         "user_1 int(32),"
@@ -154,6 +154,10 @@ def login(cursor, username, password):
     return message, logged_in, user_id
 
 
+def getting_user_id(cursor, username):
+    cursor.execute("""select user_id from messenger_users where username = %s""", (username,))
+    return cursor
+
 def listing_chats(connection, user_id, key, cipher_iv):
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor()
@@ -171,7 +175,7 @@ def listing_chats(connection, user_id, key, cipher_iv):
 
 
 def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_username, key, cipher_iv):
-    cursor.execute("""select user_id from messenger_users where username = %s""", (recipient_username,))
+    cursor = getting_user_id(cursor, recipient_username)
     recipient_user_id = cursor.fetchall()
     if len(recipient_user_id) < 1:
         error = ["000004"]
@@ -240,7 +244,7 @@ def chat_into_string(chat, username, user_id, recipient_username):
 
 
 def selecting_chat_table_name(cursor, user_id, recipient_username):
-    cursor.execute("""select user_id from messenger_users where username = %s""", (recipient_username,))
+    cursor = getting_user_id(cursor, recipient_username)
     recipient_user_id = cursor.fetchall()[0][0]
     cursor.execute("""select table_name from chats_{} where user_2 = %s""".format(user_id), (recipient_user_id,))
     chat_table_name = cursor.fetchall()[0][0]

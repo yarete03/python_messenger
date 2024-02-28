@@ -23,13 +23,14 @@ login_or_create_values = ["y", "n", ""]
 ## for decrypting all communications but being able to keep the server packets save too.
 
 server_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\n'
-              b'MIIBCgKCAQEArYXsESibTipH2ZhNH7QY7BIgEWvU4h394Me+JnFlQk/e4WSLrIn9\n'
-              b'hAfV3NTv6N665sdH2cOB3axcqEYtcRbeBThoJQ5aBKxX95E1P+S7QAXxb1H4TeyO\n'
-              b'o6Qgonwi8cKQNaPCvoHKx6ci04Zcnc8WVilV3Uc/FkgbPLB6sPxMhKHPSX111zXa\n'
-              b'A4QgvDpEIsF1v1VsB1TiWeVzNLHWv8sjooz9JhOZfX2XvDQWE/aILPcIEIdiEw+3\n'
-              b'02SKaOraLw4s3F9+LSQRH+xZ+FESy6+xU+rG5ZKQklcrBr8k1HnGKzH3dEUndNJr\n'
-              b'DktaLXtyG7U2iIaZNz5LihGOW54g3JO1PwIDAQAB\n'
-              b'-----END RSA PUBLIC KEY-----\n')
+                     b'MIIBCgKCAQEAgzn9d1bbruVsTsFT4fJ6a3eOvhHtOAEciF8XO9mS/MlXBo8Qafy/\n'
+                     b'cIdisVkRyO/1Dvh29JUCIXGDIWJDDxKP5apAHB8DlyDyfOLcwa87kHR/ZfTo+k1n\n'
+                     b'fY7zY0k8aDMoHIIEHAuw1gBjcWrYJ2ZM7vMTm7o+w25sXafD/QsQvdFLRs+eMoxe\n'
+                     b'/21NeWrZnaQ8/7z+Y2TBChQdqIlR5IgwfJWcKt2TtKzX4r7vXEYS9TSo64P5bz1B\n'
+                     b'P89A9x371QslVgWuUaIAQTv+SQ04A8XnyoQGhfIINM2orxZZJH3eryHcVW//j8cQ\n'
+                     b'76Syo4rbR0lw57lCV7Fa0bpyDbSEoe4QvQIDAQAB\n'
+                     b'-----END RSA PUBLIC KEY-----\n'
+)
 
 server_public_key = rsa.PublicKey.load_pkcs1(server_public_key)
 
@@ -196,8 +197,7 @@ def receiving_messages():
                         message = chat[0]
                         transmitter_name = chat[1]
                         print(transmitter_name + ": " + message)
-                        for i in range(2):
-                            chat.pop(0)
+                        chat = chat[2:]
             old_chat = chat.copy()
         except KeyboardInterrupt:
             break
