@@ -93,11 +93,14 @@ def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
 
 
 def encode_encrypt_send(connection, message, key, cipher_iv):
-    message = str(message)
-    message = message.encode("utf-8")
-    cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
-    ciphered_message = cipher.encrypt(pad(message, AES.block_size))
-    connection.send(ciphered_message)
+    try:
+        message = str(message)
+        message = message.encode("utf-8")
+        cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
+        ciphered_message = cipher.encrypt(pad(message, AES.block_size))
+        connection.send(ciphered_message)
+    except BrokenPipeError:
+        pass
 
 
 def login_create(connection, data, connection_to_db, cursor, ip, key, cipher_iv):
@@ -158,6 +161,7 @@ def getting_user_id(cursor, username):
     cursor.execute("""select user_id from messenger_users where username = %s""", (username,))
     return cursor
 
+
 def listing_chats(connection, user_id, key, cipher_iv):
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor()
@@ -201,25 +205,40 @@ def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_use
 
 
 def returning_chat(connection, user_id, recipient_username, key, cipher_iv):
-    old_chat = None
+    old_last_line = 0
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor()
     cursor.execute(cursor_read_everything)
     chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
     cursor.execute("""select username from messenger_users where user_id = %s""", (user_id,))
     username = cursor.fetchall()[0][0]
+
+    cursor.execute("""select message, transmitter_id from {}""".format(chat_table_name))
+    chat = cursor.fetchall()
+
+    if len(chat) > 0:
+        cursor.execute("""select message_id from {} order by message_id desc limit 1""".format(chat_table_name))
+        old_last_line = cursor.fetchall()[0][0]
+        chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
+        encode_encrypt_send(connection, chat_concatenated, key, cipher_iv)
+    else:
+        encode_encrypt_send(connection, ["000006"], key, cipher_iv)
+
     while True:
         try:
-            cursor.execute("""select message, transmitter_id from {}""".format(chat_table_name))
-            chat = cursor.fetchall()
-            if chat != old_chat:
-                if len(chat) > 0:
-                    old_chat = chat
-                    chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
-                    encode_encrypt_send(connection, chat_concatenated, key, cipher_iv)
-                else:
-                    encode_encrypt_send(connection, ["000006"], key, cipher_iv)
+            cursor.execute("""select message_id from {} order by message_id desc limit 1""".format(chat_table_name))
+            last_line = cursor.fetchall()[0][0]
+            if last_line != old_last_line:
+                line_difference = last_line - old_last_line
+                old_last_line = last_line
+                cursor.execute("""select message, transmitter_id from {} order by message_id desc limit {}""".format(
+                                                                            chat_table_name, line_difference))
+                chat = cursor.fetchall()
+                chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
+                encode_encrypt_send(connection, chat_concatenated, key, cipher_iv)
             time.sleep(0.1)
+        except IndexError:
+            pass
         except mysql.connector.errors.ProgrammingError:
             break
         except KeyboardInterrupt:

@@ -23,14 +23,12 @@ login_or_create_values = ["y", "n", ""]
 ## for decrypting all communications but being able to keep the server packets save too.
 
 server_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\n'
-                     b'MIIBCgKCAQEAgzn9d1bbruVsTsFT4fJ6a3eOvhHtOAEciF8XO9mS/MlXBo8Qafy/\n'
-                     b'cIdisVkRyO/1Dvh29JUCIXGDIWJDDxKP5apAHB8DlyDyfOLcwa87kHR/ZfTo+k1n\n'
-                     b'fY7zY0k8aDMoHIIEHAuw1gBjcWrYJ2ZM7vMTm7o+w25sXafD/QsQvdFLRs+eMoxe\n'
-                     b'/21NeWrZnaQ8/7z+Y2TBChQdqIlR5IgwfJWcKt2TtKzX4r7vXEYS9TSo64P5bz1B\n'
-                     b'P89A9x371QslVgWuUaIAQTv+SQ04A8XnyoQGhfIINM2orxZZJH3eryHcVW//j8cQ\n'
-                     b'76Syo4rbR0lw57lCV7Fa0bpyDbSEoe4QvQIDAQAB\n'
-                     b'-----END RSA PUBLIC KEY-----\n'
-)
+                     b'MIIBCgKCAQEA9HYaItpndA5TtDW6N1qlCZyeWAyJtQKPVpwYgFfSlYL870mvKlt6\n'
+                     b'jMlLfSX/0V4p3rEVX3vsTO4WM4RLkhgyE++TzwkM2BD5ha8YKPkfIDQkg0kwVdZw\n'
+                     b'Q2cF/fMmAGBauZCtNR1MS192DMzpvvdJqjgCkmG9HrJFrsHGPBdUKNPjuuhYyzYM\n'
+                     b'LkcTr0TS9r2n3A42sy6ji3gSYNQFY2W+3wMwwSAf1GG5mBWjevRz98M8KGFqkcLf\n'
+                     b'Y6990rDSlMzJqGukk8mERZ7hYpEQkay7IFR8oUxQhQRuwa3vgV8+6WgaPmJ0MygE\n'
+                     b'a8T6cPH3w8FrP5NliucxuGGhdjF7RAKDNQIDAQAB\n-----END RSA PUBLIC KEY-----\n')
 
 server_public_key = rsa.PublicKey.load_pkcs1(server_public_key)
 
@@ -179,7 +177,7 @@ def starting_receiving_sending_multiprocesses():
 
 
 def receiving_messages():
-    old_chat = None
+    first_time = True
     while True:
         try:
             chat = socket.recv(4096)
@@ -187,18 +185,22 @@ def receiving_messages():
                 break
             chat = decode_split_decrypt_response(chat)
             chat_rc = chat[0]
-            if chat_rc != "000000" and old_chat is None:
+            chat.pop(0)
+            if chat_rc != "000000":
                 print("You have to start your new conversation")
             else:
-                if old_chat != chat:
-                    chat.pop(0)
-                    clear_console()
-                    while len(chat) > 0:
-                        message = chat[0]
-                        transmitter_name = chat[1]
-                        print(transmitter_name + ": " + message)
-                        chat = chat[2:]
-            old_chat = chat.copy()
+                if first_time:
+                    old_chat = chat.copy()
+                    first_time = False
+                elif old_chat != chat:
+                    chat = old_chat + chat
+                    old_chat = chat.copy()
+                clear_console()
+                while len(chat) > 0:
+                    message = chat[0]
+                    transmitter_name = chat[1]
+                    print(transmitter_name + ": " + message)
+                    chat = chat[2:]
         except KeyboardInterrupt:
             break
 
