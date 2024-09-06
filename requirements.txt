@@ -2,3 +2,4 @@ mysql-connector==2.2.9
 pyasn1==0.5.1
 pycryptodome==3.20.0
 rsa==4.9
+mysql-connector-python==9.0.0
