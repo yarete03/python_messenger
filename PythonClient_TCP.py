@@ -17,11 +17,6 @@ socket = socket.socket()
 socket.connect((server_ip, server_port))
 login_or_create_values = ["y", "n", ""]
 
-## There is a cross asymetric communication. We have a specific keys pair for server and a different one for clients.
-## This feature will encrypt all data that travels though network with RSA keys.
-## On this cross way, private server key is only on server side keeping away clients
-## for decrypting all communications but being able to keep the server packets save too.
-
 server_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\n'
                      b'MIIBCgKCAQEA9HYaItpndA5TtDW6N1qlCZyeWAyJtQKPVpwYgFfSlYL870mvKlt6\n'
                      b'jMlLfSX/0V4p3rEVX3vsTO4WM4RLkhgyE++TzwkM2BD5ha8YKPkfIDQkg0kwVdZw\n'

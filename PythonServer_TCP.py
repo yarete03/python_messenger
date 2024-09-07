@@ -23,10 +23,6 @@ db_user = "python_messenger"
 db_password = "----#----"
 db = "python_messenger"
 
-## There is a cross asymetric communication. We have a specific keys pair for server and a different one for clients.
-## This feature will encrypt all data that travels though network with RSA keys.
-## On this cross way, private server key is only on server side keeping away clients
-## for decrypting all communications but being able to keep the server packets save too.
 with open("./private.key","rb") as key_file:
     server_private_key = key_file.read()
 

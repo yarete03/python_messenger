@@ -16,3 +16,5 @@ nohup.out
 .scannerwork/
 .scannerwork/*
 private.key
+venv/
+venv/*
