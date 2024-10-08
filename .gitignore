@@ -16,3 +16,8 @@ nohup.out
 .scannerwork/
 .scannerwork/*
 private.key
+portainer-data
+portainer-data/
+./portainer-data/
+./Dockerfile
+./docker-compose.yml

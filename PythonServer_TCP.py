@@ -1,321 +1,270 @@
-import socket
-import multiprocessing
-import time
-import mysql.connector
+import asyncio
 import rsa
+import mysql.connector
+from concurrent.futures import ThreadPoolExecutor
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 
-host = '0.0.0.0'
-port = 8000
-
-s = socket.socket()
-s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
-             1)  # solution for "[Error 89] Address already in use". Use before bind()
-s.bind((host, port))
-s.listen(20)
-
-all_multiprocesses = []
-
+executor = ThreadPoolExecutor()
 
 db_host = "localhost"
 db_user = "python_messenger"
 db_password = "----#----"
 db = "python_messenger"
 
-## There is a cross asymetric communication. We have a specific keys pair for server and a different one for clients.
-## This feature will encrypt all data that travels though network with RSA keys.
-## On this cross way, private server key is only on server side keeping away clients
-## for decrypting all communications but being able to keep the server packets save too.
-with open("./private.key","rb") as key_file:
-    server_private_key = key_file.read()
-
-server_private_key = rsa.PrivateKey.load_pkcs1(server_private_key)
-
 cursor_read_everything = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
 
+with open("./private.key", "rb") as key_file:
+    server_private_key = rsa.PrivateKey.load_pkcs1(key_file.read())
 
-def requesting_data(connection, logged_in, ip, key, cipher_iv):
-    cursor = None
+
+async def handle_client(reader, writer):
+    ip = writer.get_extra_info('peername')[0]
+    print(f"[+] New connection from {ip}")
+
+    key = await reader.read(4096)
+    cipher_iv = await reader.read(4096)
+
+    try:
+        # RSA decryption in a thread pool
+        key = await asyncio.get_event_loop().run_in_executor(executor, rsa.decrypt, key, server_private_key)
+        cipher_iv = await asyncio.get_event_loop().run_in_executor(executor, rsa.decrypt, cipher_iv, server_private_key)
+
+
+        # Use the decrypted AES key/IV for further communication
+        await requesting_data(reader, writer, False, ip, key, cipher_iv)
+    except rsa.pkcs1.DecryptionError:
+        print(f"CRITICAL ALERT: Decryption failed on '{ip}' communications.")
+        writer.close()
+
+
+async def requesting_data(reader, writer, logged_in, ip, key, cipher_iv):
     user_id = None
-    connection_to_db = None
     recipient_username = None
+    connection_to_db = None
+    returning_chat_task = None  # Task for real-time message updates
 
     while True:
         try:
-            data = connection.recv(4096)
+            data = await reader.read(4096)
             if not data:
                 print(f'[+] Connection from {ip} was closed')
-                connection.close()
+                writer.close()
                 break
             if not logged_in:
-                connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
+                connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password,
+                                                           database=db)
                 cursor = connection_to_db.cursor()
                 cursor.execute(cursor_read_everything)
-                logged_in, user_id = login_create(connection, data, connection_to_db, cursor, ip, key, cipher_iv)
+                logged_in, user_id = await login_create(writer, data, connection_to_db, cursor, key, cipher_iv)
             else:
-                data = decode_split_decrypt_response(data, ip, connection, key, cipher_iv)
+                data = decode_split_decrypt_response(data, key, cipher_iv)
                 mode = data[0]
                 if mode == 'chat_array_request':
-                    listing_chats(connection, user_id, key, cipher_iv)
+                    await listing_chats(writer, user_id, key, cipher_iv)
                 elif mode == 'create_new_chat':
                     recipient_username = data[1]
-                    create_new_chat(connection, connection_to_db, cursor, user_id, recipient_username, key, cipher_iv)
+                    await create_new_chat(writer, connection_to_db, cursor, user_id, recipient_username, key, cipher_iv)
                 elif mode == 'selection_of_chat':
                     recipient_username = data[1]
-                    multiprocess_returning_chat = multiprocessing.Process(target=returning_chat, args=(
-                                                                          connection, user_id, recipient_username, key, cipher_iv))
-                    multiprocess_returning_chat.start()
-                elif mode == "sending_new_message":
+                    if returning_chat_task:
+                        returning_chat_task.cancel()
+
+                    # Start the real-time message updater
+                    returning_chat_task = asyncio.create_task(
+                        returning_chat(writer, user_id, recipient_username, key, cipher_iv))
+                elif mode == 'sending_new_message':
                     new_message = data[1]
-                    inserting_new_messages(user_id, recipient_username, new_message)
+                    await inserting_new_messages(user_id, recipient_username, new_message)
                 elif mode == "exiting_from_chat":
-                    multiprocess_returning_chat.terminate()
+                    if returning_chat_task:
+                        returning_chat_task.cancel()
+                        returning_chat_task = None
         except ConnectionResetError as connection_reset_error:
             print(f'[!] Connection from {ip}: {connection_reset_error}')
+            writer.close()
+            await writer.wait_closed()
+            break
         except KeyboardInterrupt:
             break
 
 
-def decode_split_decrypt_response(data, ip, connection, key, cipher_iv):
-    try:
-        cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
-        data = unpad(cipher.decrypt(data), AES.block_size)
-        data = data.decode("utf-8")
-        data = eval(data)
-        return data
-    except ValueError:
-        print(f"[!] CRITICAL ALERT: Decryption failed on '{ip}' communications. This could mean that someone is trying "
-              f"to attack the server")
-        connection.close()
-        print(f"[!] WARNING: Communication with client '{ip}' was closed for security purpose")
-        exit(101)
-
-
-def encode_encrypt_send(connection, message, key, cipher_iv):
-    try:
-        message = str(message)
-        message = message.encode("utf-8")
-        cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
-        ciphered_message = cipher.encrypt(pad(message, AES.block_size))
-        connection.send(ciphered_message)
-    except BrokenPipeError:
-        pass
-
-
-def login_create(connection, data, connection_to_db, cursor, ip, key, cipher_iv):
-    data = decode_split_decrypt_response(data, ip, connection, key, cipher_iv)
+async def login_create(writer, data, connection_to_db, cursor, key, cipher_iv):
+    data = decode_split_decrypt_response(data, key, cipher_iv)
     mode = data[0]
     username = data[1]
     password = data[2]
     if mode == "create":
-        cursor.execute("""select user_id from messenger_users where username = %s;""", (username,))
-        if len(cursor.fetchall()) >= 1:
-            message = ["000001", "User already exists. Change the username."]
-            logged_in = False
-            user_id = None
-        else:
-            message = creating_user(connection_to_db, cursor, username, password)
-            logged_in = False
-            user_id = None
+        message, logged_in, user_id = await creating_user(connection_to_db, cursor, username, password)
     else:
-        message, logged_in, user_id = login(cursor, username, password)
+        message, logged_in, user_id = await login(cursor, username, password)
 
-    encode_encrypt_send(connection, message, key, cipher_iv)
+    encode_encrypt_send(writer, message, key, cipher_iv)
     return logged_in, user_id
 
 
-def creating_user(connection_to_db, cursor, username, password):
-    cursor.execute("""insert into messenger_users(user_id, username, password) values(null,%s,MD5(%s));""", (username,
-                                                                                                       password))
-    cursor = getting_user_id(cursor, username)
-    user_id = cursor.fetchall()[0][0]
-    cursor.execute("create table chats_{}("
-        "user_1 int(32),"
-        "user_2 int(32)," 
-        "table_name varchar(255) not null," 
-        "primary key (user_1, user_2)," 
-        "foreign key (user_1) references messenger_users(user_id) on delete cascade," 
-        "foreign key (user_2) references messenger_users(user_id) on delete cascade);".format(user_id))
-    connection_to_db.commit()
-    message = ["000000", "User was successfully created! Try to log into your new user."]
-    return message
+def decode_split_decrypt_response(data, key, cipher_iv):
+    cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
+    data = unpad(cipher.decrypt(data), AES.block_size)
+    data = data.decode("utf-8")
+    return eval(data)
 
 
-def login(cursor, username, password):
-    cursor.execute("""select user_id from messenger_users where username = %s and password = MD5(%s);""", (username,
-                                                                                                     password))
-    user_id = cursor.fetchall()
-    if len(user_id) >= 1:
-        message = ["000000", "Welcome {}!".format(username)]
-        logged_in = True
-        user_id = user_id[0][0]
+def encode_encrypt_send(writer, message, key, cipher_iv):
+    message = str(message).encode("utf-8")
+    cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
+    encrypted_message = cipher.encrypt(pad(message, AES.block_size))
+    writer.write(encrypted_message)
+
+
+async def creating_user(connection_to_db, cursor, username, password):
+    cursor.execute("SELECT user_id FROM messenger_users WHERE username = %s", (username,))
+    if len(cursor.fetchall()) >= 1:
+        return ["000001", "User already exists. Change the username."], False, None
     else:
-        message = ["000002", "Username or password are incorrect or doesn't exists. Please try again."]
-        logged_in = False
-        user_id = None
-    return message, logged_in, user_id
+        cursor.execute("INSERT INTO messenger_users(username, password) VALUES(%s, MD5(%s))", (username, password))
+        connection_to_db.commit()
+        cursor.execute("SELECT user_id FROM messenger_users WHERE username = %s", (username,))
+        user_id = cursor.fetchone()[0]
+        cursor.execute(
+            f"CREATE TABLE chats_{user_id} (user_1 INT, user_2 INT, table_name VARCHAR(255), PRIMARY KEY(user_1, user_2))")
+        connection_to_db.commit()
+        return ["000000", "User successfully created!"], False, user_id
 
 
-def getting_user_id(cursor, username):
-    cursor.execute("""select user_id from messenger_users where username = %s""", (username,))
-    return cursor
+async def login(cursor, username, password):
+    cursor.execute("SELECT user_id FROM messenger_users WHERE username = %s AND password = MD5(%s)",
+                   (username, password))
+    result = cursor.fetchone()
+    if result:
+        return ["000000", f"Welcome {username}!"], True, result[0]
+    else:
+        return ["000002", "Invalid username or password."], False, None
 
 
-def listing_chats(connection, user_id, key, cipher_iv):
+async def listing_chats(writer, user_id, key, cipher_iv):
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor()
-    cursor.execute("""select username from messenger_users where user_id in (select user_2 from chats_{})""".format(user_id))
+    cursor.execute(f"SELECT username FROM messenger_users WHERE user_id IN (SELECT user_2 FROM chats_{user_id})")
     chats = cursor.fetchall()
     if len(chats) < 1:
-        error = ["000003"]
-        encode_encrypt_send(connection, error, key, cipher_iv)
+        encode_encrypt_send(writer, ["000003"], key, cipher_iv)
     else:
-        chats_concatenated = ["000000"]
-        for chat in chats:
-            for username in chat:
-                chats_concatenated.append(username)
-        encode_encrypt_send(connection, chats_concatenated, key, cipher_iv)
+        chat_list = ["000000"] + [chat[0] for chat in chats]
+        encode_encrypt_send(writer, chat_list, key, cipher_iv)
 
 
-def create_new_chat(connection, connection_to_db, cursor, user_id, recipient_username, key, cipher_iv):
-    cursor = getting_user_id(cursor, recipient_username)
-    recipient_user_id = cursor.fetchall()
-    if len(recipient_user_id) < 1:
-        error = ["000004"]
-        encode_encrypt_send(connection, error, key, cipher_iv)
+async def create_new_chat(writer, connection_to_db, cursor, user_id, recipient_username, key, cipher_iv):
+    cursor.execute("SELECT user_id FROM messenger_users WHERE username = %s", (recipient_username,))
+    recipient_user_id = cursor.fetchone()
+    if recipient_user_id is None:
+        encode_encrypt_send(writer, ["000004", "Recipient not found."], key, cipher_iv)
     else:
-        recipient_user_id = recipient_user_id[0][0]
-        table_name = str(user_id) + "_" + str(recipient_user_id)
-        cursor.execute("""insert into chats_{} (values (%s, %s, %s))""".format(user_id), (user_id,
-                                                                                  recipient_user_id, "_" + table_name))
-        cursor.execute("""insert into chats_{} (values (%s, %s, %s))""".format(recipient_user_id), (recipient_user_id,
-                                                                                  user_id, "_" + table_name))
-        cursor.execute("create table _{}("
-                       "message_id int(64) auto_increment," 
-                       "message text(1000)," 
-                       "transmitter_id int(32)," 
-                       "recipient_id int(32)," 
-                       "primary key (message_id)," 
-                       "foreign key (recipient_id) references messenger_users(user_id) on delete cascade," 
-                       "foreign key (transmitter_id) references messenger_users(user_id)on delete cascade);".format(table_name))
+        recipient_user_id = recipient_user_id[0]
+        table_name = f"{user_id}_{recipient_user_id}"
+        cursor.execute(f"INSERT INTO chats_{user_id} (user_1, user_2, table_name) VALUES (%s, %s, %s)",
+                       (user_id, recipient_user_id, f"_{table_name}"))
+        cursor.execute(f"INSERT INTO chats_{recipient_user_id} (user_1, user_2, table_name) VALUES (%s, %s, %s)",
+                       (recipient_user_id, user_id, f"_{table_name}"))
+        cursor.execute(
+            f"CREATE TABLE _{table_name} (message_id INT AUTO_INCREMENT PRIMARY KEY, message TEXT, transmitter_id INT, recipient_id INT)")
         connection_to_db.commit()
-        success = ["000000"]
-        encode_encrypt_send(connection, success, key, cipher_iv)
+        encode_encrypt_send(writer, ["000000", "Chat created successfully!"], key, cipher_iv)
 
 
-def returning_chat(connection, user_id, recipient_username, key, cipher_iv):
-    old_last_line = 0
+async def inserting_new_messages(user_id, recipient_username, new_message):
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
     cursor = connection_to_db.cursor()
-    cursor.execute(cursor_read_everything)
-    chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
-    cursor.execute("""select username from messenger_users where user_id = %s""", (user_id,))
-    username = cursor.fetchall()[0][0]
-
-    cursor.execute("""select message, transmitter_id from {}""".format(chat_table_name))
-    chat = cursor.fetchall()
-
-    if len(chat) > 0:
-        cursor.execute("""select message_id from {} order by message_id desc limit 1""".format(chat_table_name))
-        old_last_line = cursor.fetchall()[0][0]
-        chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
-        encode_encrypt_send(connection, chat_concatenated, key, cipher_iv)
-    else:
-        encode_encrypt_send(connection, ["000006"], key, cipher_iv)
-
-    while True:
-        try:
-            cursor.execute("""select message_id from {} order by message_id desc limit 1""".format(chat_table_name))
-            last_line = cursor.fetchall()[0][0]
-            if last_line != old_last_line:
-                line_difference = last_line - old_last_line
-                old_last_line = last_line
-                cursor.execute("""select message, transmitter_id from {} order by message_id desc limit {}""".format(
-                                                                            chat_table_name, line_difference))
-                chat = cursor.fetchall()
-                chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
-                encode_encrypt_send(connection, chat_concatenated, key, cipher_iv)
-            time.sleep(0.1)
-        except IndexError:
-            pass
-        except mysql.connector.errors.ProgrammingError:
-            break
-        except KeyboardInterrupt:
-            break
+    cursor.execute(
+        f"SELECT table_name FROM chats_{user_id} WHERE user_2 = (SELECT user_id FROM messenger_users WHERE username = %s)",
+        (recipient_username,))
+    chat_table_name = cursor.fetchone()[0]
+    if new_message:
+        cursor.execute(
+            f"INSERT INTO {chat_table_name} (message, transmitter_id, recipient_id) VALUES (%s, %s, (SELECT user_id FROM messenger_users WHERE username = %s))",
+            (new_message, user_id, recipient_username))
+        connection_to_db.commit()
 
 
 def chat_into_string(chat, username, user_id, recipient_username):
     chat_concatenated = ["000000"]
-    for message in chat:
-        counter = 0
-        for item in message:
-            if counter == 1:
-                if item == user_id:
-                    item = username
-                else:
-                    item = recipient_username
-            else:
-                item = str(item)
-            chat_concatenated.append(item)
-            counter += 1
+    for message, transmitter_id in chat:
+        sender = username if transmitter_id == user_id else recipient_username
+        chat_concatenated.append(f"{sender}: {message}")
     return chat_concatenated
 
 
-def selecting_chat_table_name(cursor, user_id, recipient_username):
-    cursor = getting_user_id(cursor, recipient_username)
-    recipient_user_id = cursor.fetchall()[0][0]
-    cursor.execute("""select table_name from chats_{} where user_2 = %s""".format(user_id), (recipient_user_id,))
-    chat_table_name = cursor.fetchall()[0][0]
-    return chat_table_name
-
-
-def inserting_new_messages(user_id, recipient_username, new_message):
+async def returning_chat(writer, user_id, recipient_username, key, cipher_iv):
+    old_last_line = 0
     connection_to_db = mysql.connector.connect(host=db_host, user=db_user, password=db_password, database=db)
-    cursor = connection_to_db.cursor(buffered=True)
+    cursor = connection_to_db.cursor()
     cursor.execute(cursor_read_everything)
+
+    # Get the chat table name
     chat_table_name = selecting_chat_table_name(cursor, user_id, recipient_username)
-    cursor.execute("""select user_id from messenger_users where username = %s""", (recipient_username,))
-    recipient_user_id = cursor.fetchall()[0][0]
-    if new_message != "":
-        cursor.execute("""insert into {}(values(null,%s,%s,%s))""".format(chat_table_name), (new_message,
-                                                                            user_id, recipient_user_id))
-        connection_to_db.commit()
+
+    # Get the username of the current user
+    cursor.execute("""SELECT username FROM messenger_users WHERE user_id = %s""", (user_id,))
+    username = cursor.fetchall()[0][0]
+
+    # Fetch initial chat messages
+    cursor.execute(f"SELECT message, transmitter_id FROM {chat_table_name}")
+    chat = cursor.fetchall()
+
+    # If there are existing messages, send them to the user
+    if chat:
+        cursor.execute(f"SELECT message_id FROM {chat_table_name} ORDER BY message_id DESC LIMIT 1")
+        old_last_line = cursor.fetchall()[0][0]
+        chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
+        encode_encrypt_send(writer, chat_concatenated, key, cipher_iv)
+    else:
+        # If no messages, send a no messages found code
+        encode_encrypt_send(writer, ["000006"], key, cipher_iv)
+
+    # Continuously check for new messages
+    while True:
+        try:
+            cursor.execute(f"SELECT message_id FROM {chat_table_name} ORDER BY message_id DESC LIMIT 1")
+            last_line = cursor.fetchall()[0][0]
+
+            if last_line != old_last_line:
+                line_difference = last_line - old_last_line
+                old_last_line = last_line
+                cursor.execute(f"""SELECT message, transmitter_id 
+                                   FROM {chat_table_name} 
+                                   ORDER BY message_id DESC LIMIT {line_difference}""")
+                chat = cursor.fetchall()
+
+                # Convert the new chat data into a string format and send it
+                chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
+                encode_encrypt_send(writer, chat_concatenated, key, cipher_iv)
+
+            # Sleep for a short time to avoid busy looping
+            await asyncio.sleep(0.1)
+        except IndexError:
+            pass  # This occurs when no messages are found
+        except mysql.connector.errors.ProgrammingError:
+            break  # Handles disconnection or table errors
+        except KeyboardInterrupt:
+            break  # Stop the loop when the server is interrupted
 
 
-def main():
-    try:
-        while True:
-            try:
-                connection, addr = s.accept()
-                ip = addr[0]
-                print("[+] New connection from {}".format(ip))
-                key = connection.recv(4096)
-                connection.send("handshake".encode("utf-8"))
-                cipher_iv = connection.recv(4096)
-                try:
-                    key = rsa.decrypt(key, server_private_key)
-                    cipher_iv = rsa.decrypt(cipher_iv, server_private_key)
-                    t = multiprocessing.Process(target=requesting_data,
-                                                args=(connection, False, ip, key, cipher_iv))
-                    t.start()
+def selecting_chat_table_name(cursor, user_id, recipient_username):
+    cursor.execute("SELECT user_id FROM messenger_users WHERE username = %s", (recipient_username,))
+    recipient_user_id = cursor.fetchone()[0]
+    cursor.execute(f"SELECT table_name FROM chats_{user_id} WHERE user_2 = %s", (recipient_user_id,))
+    return cursor.fetchone()[0]
 
-                    all_multiprocesses.append(t)
-                except rsa.pkcs1.DecryptionError:
-                    print(
-                        f"CRITICAL ALERT: Decryption failed on '{ip}' communications. This could mean that someone is trying "
-                        f"to attack the server")
-                    connection.close()
-                    print(f"WARNING: Communication with client '{ip}' was closed for security purpose")
-            except KeyboardInterrupt:
-                print("\n[!] Server was stopped")
-                exit()
-    finally:
-        if s:
-            s.close()
-        for t in all_multiprocesses:
-            t.join()
+
+async def main():
+    server = await asyncio.start_server(handle_client, '0.0.0.0', 8000)
+
+    async with server:
+        await server.serve_forever()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print('[!] Closing server due keyboard interruption')

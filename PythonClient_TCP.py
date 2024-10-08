@@ -14,21 +14,15 @@ from Crypto.Util.Padding import pad, unpad
 server_ip = '127.0.0.1'
 server_port = 8000
 socket = socket.socket()
-socket.connect((server_ip, server_port))
+try:
+    socket.connect((server_ip, server_port))
+except ConnectionRefusedError:
+    print('[!] It seems you do not have connection with server. Exiting...')
+    exit(1)
+
 login_or_create_values = ["y", "n", ""]
 
-## There is a cross asymetric communication. We have a specific keys pair for server and a different one for clients.
-## This feature will encrypt all data that travels though network with RSA keys.
-## On this cross way, private server key is only on server side keeping away clients
-## for decrypting all communications but being able to keep the server packets save too.
-
-server_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\n'
-                     b'MIIBCgKCAQEA9HYaItpndA5TtDW6N1qlCZyeWAyJtQKPVpwYgFfSlYL870mvKlt6\n'
-                     b'jMlLfSX/0V4p3rEVX3vsTO4WM4RLkhgyE++TzwkM2BD5ha8YKPkfIDQkg0kwVdZw\n'
-                     b'Q2cF/fMmAGBauZCtNR1MS192DMzpvvdJqjgCkmG9HrJFrsHGPBdUKNPjuuhYyzYM\n'
-                     b'LkcTr0TS9r2n3A42sy6ji3gSYNQFY2W+3wMwwSAf1GG5mBWjevRz98M8KGFqkcLf\n'
-                     b'Y6990rDSlMzJqGukk8mERZ7hYpEQkay7IFR8oUxQhQRuwa3vgV8+6WgaPmJ0MygE\n'
-                     b'a8T6cPH3w8FrP5NliucxuGGhdjF7RAKDNQIDAQAB\n-----END RSA PUBLIC KEY-----\n')
+server_public_key = (b'-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAnFlwvDwPFZWpKToY+v6jnn6YZEC7Vtnt8eEyMq26cYAEGm7pSE2W\nahNR0vYAedAEQLQPHljvgkTXwrThDETfhVdNYiNb49qnVuSTbB2pzHwmiIpXQ+X1\n/49UqtT2rixAmZb/Gk8eMRQVfkXKmZ+diUtcLxD/SrXlHyKzY7kbIhOEvta2YmuK\ngJxbVDxncgbQe7DGdKNfVqj1w2ROpnMqQ4kTEsjGkHTnQpchFHQhv/0cycH4jEXd\nBtUSfx5Dc+QVESlv+SwnlUxhto0+StSnVLdivr+S59woxcQKTuPntSe5mrBmR3jL\nEgGVhUwzU+CLLag5U1F1WaFPejZomAvWuQIDAQAB\n-----END RSA PUBLIC KEY-----\n')
 
 server_public_key = rsa.PublicKey.load_pkcs1(server_public_key)
 
@@ -41,7 +35,6 @@ key = PBKDF2(password, salt, dkLen=32)
 cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
 
 socket.send(rsa.encrypt(key, server_public_key))
-socket.recv(4096)
 socket.send(rsa.encrypt(cipher_iv, server_public_key))
 
 if platform.system() == 'Windows':
@@ -55,19 +48,27 @@ def clear_console():
 
 
 def decode_split_decrypt_response(response):
-    cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
-    response = unpad(cipher.decrypt(response), AES.block_size)
-    response = response.decode('utf-8')
-    response = eval(response)
-    return response
+    try:
+        cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
+        response = unpad(cipher.decrypt(response), AES.block_size)
+        response = response.decode('utf-8')
+        response = eval(response)
+        return response
+    except ValueError:
+        print('[!] It seems you lost connection with server. Exiting...')
+        exit(1)
 
 
 def encode_encrypt_send(message):
-    message = str(message)
-    message = message.encode("utf-8")
-    cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
-    ciphered_message = cipher.encrypt(pad(message, AES.block_size))
-    socket.send(ciphered_message)
+    try:
+        message = str(message)
+        message = message.encode("utf-8")
+        cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
+        ciphered_message = cipher.encrypt(pad(message, AES.block_size))
+        socket.send(ciphered_message)
+    except BrokenPipeError:
+        print('[!] It seems you lost connection with server. Exiting...')
+        exit(1)
 
 
 def login_create():
@@ -78,10 +79,14 @@ def login_create():
         login_or_create = input("Do you already have an account? [y/N]: ")
         login_or_create = login_or_create.lower()
     clear_console()
-    if login_or_create == "y":
-        login()
-    elif login_or_create == "n" or login_or_create.lower() == "":
-        create_user()
+    try:
+        if login_or_create == "y":
+            login()
+        elif login_or_create == "n" or not login_or_create.strip():
+            create_user()
+    except KeyboardInterrupt:
+        clear_console()
+        login_create()
 
 
 def login():
@@ -139,23 +144,30 @@ def chat_selection():
         try:
             chat_response = input()
             if chat_response.lower() == "c":
-                clear_console()
-                recipient_username = input("Who do you want to start a conversation with?: ")
-                message = ["create_new_chat", recipient_username]
-                encode_encrypt_send(message)
-                response = socket.recv(4096)
-                response = decode_split_decrypt_response(response)
-                response_rc = response[0]
-                clear_console()
-                if response_rc != "000000":
-                    print("There is no user named {}. Please, try again.".format(recipient_username))
-                else:
-                    print("New chat was successfully created!")
+                try:
+                    clear_console()
+                    recipient_username = input("Who do you want to start a conversation with?: ")
+                    message = ["create_new_chat", recipient_username]
+                    encode_encrypt_send(message)
+                    response = socket.recv(4096)
+                    response = decode_split_decrypt_response(response)
+                    response_rc = response[0]
+                    clear_console()
+                    if response_rc != "000000":
+                        print("There is no user named {}. Please, try again.".format(recipient_username))
+                    else:
+                        print("New chat was successfully created!")
+                except KeyboardInterrupt:
+                    clear_console()
             else:
                 try:
-                    chat_response = int(chat_response)
-                    username_chat_selection = response[chat_response]
-                    open_chat(username_chat_selection)
+                    chat_number = int(chat_response)
+                    try:
+                        username_chat_selection = response[chat_number]
+                        open_chat(username_chat_selection)
+                    except IndexError:
+                        clear_console()
+                        print(f"[!] There is no chat with number '{chat_number}'. Please try again.")
                 except ValueError:
                     clear_console()
                     print("You selected a wrong value. Please try again.")
@@ -196,11 +208,8 @@ def receiving_messages():
                     chat = old_chat + chat
                     old_chat = chat.copy()
                 clear_console()
-                while len(chat) > 0:
-                    message = chat[0]
-                    transmitter_name = chat[1]
-                    print(transmitter_name + ": " + message)
-                    chat = chat[2:]
+                for message in chat:
+                    print(message)
         except KeyboardInterrupt:
             break
 
@@ -208,11 +217,12 @@ def receiving_messages():
 def message_sender(multiprocess_reception):
     while True:
         try:
-            new_message = None
-            while new_message is None:
-                new_message = input()
-            new_message = ["sending_new_message", new_message]
-            encode_encrypt_send(new_message)
+            input_prompt = "Message: "
+            print(input_prompt, end='', flush=True)
+            new_message = input()
+            if new_message.strip():
+                new_message = ["sending_new_message", new_message]
+                encode_encrypt_send(new_message)
         except KeyboardInterrupt:
             message = ["exiting_from_chat"]
             encode_encrypt_send(message)
