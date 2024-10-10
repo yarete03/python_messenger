@@ -137,10 +137,8 @@ def chat_selection():
             print("You do not have any chats yet. Try making a new one.")
         else:
             response.pop(0)
-            count = 0
             for chat in response:
-                print("{} [{}]".format(chat, count))
-                count += 1
+                print("{} [{}]".format(chat, response.index(chat)))
         try:
             chat_response = input()
             if chat_response.lower() == "c":
@@ -198,7 +196,7 @@ def receiving_messages():
             chat = decode_split_decrypt_response(chat)
             chat_rc = chat[0]
             chat.pop(0)
-            if chat_rc != "000000":
+            if chat_rc == "000006":
                 print("You have to start your new conversation")
             else:
                 if first_time:
@@ -217,8 +215,6 @@ def receiving_messages():
 def message_sender(multiprocess_reception):
     while True:
         try:
-            input_prompt = "Message: "
-            print(input_prompt, end='', flush=True)
             new_message = input()
             if new_message.strip():
                 new_message = ["sending_new_message", new_message]

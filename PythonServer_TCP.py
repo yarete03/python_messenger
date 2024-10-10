@@ -67,9 +67,6 @@ async def requesting_data(reader, writer, logged_in, ip, key, cipher_iv):
                     await create_new_chat(writer, connection_to_db, cursor, user_id, recipient_username, key, cipher_iv)
                 elif mode == 'selection_of_chat':
                     recipient_username = data[1]
-                    if returning_chat_task:
-                        returning_chat_task.cancel()
-
                     # Start the real-time message updater
                     returning_chat_task = asyncio.create_task(
                         returning_chat(writer, user_id, recipient_username, key, cipher_iv))
@@ -107,7 +104,8 @@ def decode_split_decrypt_response(data, key, cipher_iv):
     cipher = AES.new(key, AES.MODE_GCM, cipher_iv)
     data = unpad(cipher.decrypt(data), AES.block_size)
     data = data.decode("utf-8")
-    return eval(data)
+    data = eval(data)
+    return data
 
 
 def encode_encrypt_send(writer, message, key, cipher_iv):
@@ -179,11 +177,10 @@ async def inserting_new_messages(user_id, recipient_username, new_message):
         f"SELECT table_name FROM chats_{user_id} WHERE user_2 = (SELECT user_id FROM messenger_users WHERE username = %s)",
         (recipient_username,))
     chat_table_name = cursor.fetchone()[0]
-    if new_message:
-        cursor.execute(
-            f"INSERT INTO {chat_table_name} (message, transmitter_id, recipient_id) VALUES (%s, %s, (SELECT user_id FROM messenger_users WHERE username = %s))",
-            (new_message, user_id, recipient_username))
-        connection_to_db.commit()
+    cursor.execute(
+        f"INSERT INTO {chat_table_name} (message, transmitter_id, recipient_id) VALUES (%s, %s, (SELECT user_id FROM messenger_users WHERE username = %s))",
+        (new_message, user_id, recipient_username))
+    connection_to_db.commit()
 
 
 def chat_into_string(chat, username, user_id, recipient_username):
@@ -224,6 +221,9 @@ async def returning_chat(writer, user_id, recipient_username, key, cipher_iv):
     # Continuously check for new messages
     while True:
         try:
+            # Sleep for a short time to avoid busy looping
+            await asyncio.sleep(0.1)
+
             cursor.execute(f"SELECT message_id FROM {chat_table_name} ORDER BY message_id DESC LIMIT 1")
             last_line = cursor.fetchall()[0][0]
 
@@ -239,8 +239,6 @@ async def returning_chat(writer, user_id, recipient_username, key, cipher_iv):
                 chat_concatenated = chat_into_string(chat, username, user_id, recipient_username)
                 encode_encrypt_send(writer, chat_concatenated, key, cipher_iv)
 
-            # Sleep for a short time to avoid busy looping
-            await asyncio.sleep(0.1)
         except IndexError:
             pass  # This occurs when no messages are found
         except mysql.connector.errors.ProgrammingError:
