@@ -16,7 +16,7 @@ server_port = 8000
 socket = socket.socket()
 try:
     socket.connect((server_ip, server_port))
-except ConnectionRefusedError:
+except (ConnectionRefusedError, OSError):
     print('[!] It seems you do not have connection with server. Exiting...')
     exit(1)
 
